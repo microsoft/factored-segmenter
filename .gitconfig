@@ -1,0 +1,8 @@
+# This file is *NOT* read by git by default (due to security issues)
+# So for mtmain, we read it in using MyInit.cmd
+
+# For documentation on the settings in this file, see https://git-scm.com/book/en/v2/Customizing-Git-Git-Configuration
+
+# Don't auto-convert CRLF->LF on git add and CRLF->LR on git checkout (just leave the line-endings alone!)
+[core]
+        autocrlf = false
