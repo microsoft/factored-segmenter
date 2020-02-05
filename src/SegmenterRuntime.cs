@@ -1,7 +1,6 @@
 ﻿using Common.Collections.Extensions;
 using Common.MT.Segments;
 using Common.Text;
-using Common.Utils.ResharperAnnotations;
 using Microsoft.MT.TextSegmentation.SpanFinder;
 using System;
 using System.Collections.Generic;
@@ -32,7 +31,6 @@ namespace Microsoft.MT.Common.Tokenization.Segmenter
     /// </summary>
     public class EncodedSegmentReference
     {
-        [NotNull]
         public string RawSourceText; // full raw source string   --@TODO: make private if not actually needed public
         public int StartIndex;       // character coordinates of source token in the raw source string
         public int Length;
@@ -64,7 +62,6 @@ namespace Microsoft.MT.Common.Tokenization.Segmenter
 
         public struct SourceLink : IEquatable<SourceLink>// for representing alignment information
         {
-            [NotNull]
             public EncodedSegmentReference SourceSegment; // contains the character alignment
             public float Confidence; // @TODO: unit? prob or log prob?
             public bool Equals(SourceLink other)

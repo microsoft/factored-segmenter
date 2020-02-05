@@ -4,7 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
-
+using System.Xml;
 using System.Xml.Serialization;
 using Common.Collections.Extensions;
 using Common.Contracts;
@@ -285,7 +285,6 @@ namespace Microsoft.MT.Common.Tokenization
         private string line;                    // underlying string
         private int startIndex, length;         // character range into underlying string
         public Factors factors;                 // [first char of factor name] -> factor name
-        public bool lemmaWordBegPrefix;         // if set, the lemma will get an extra SPM __ character prepended
 
         // create a new Token from an entire line
         public Token(string line, Factors factors = new Factors(), bool lemmaWordBegPrefix = false)
@@ -297,7 +296,6 @@ namespace Microsoft.MT.Common.Tokenization
             this.startIndex = 0;
             this.length = line.Length;
             this.factors = factors;
-            this.lemmaWordBegPrefix = lemmaWordBegPrefix;
         }
 
         // create a new Token by replacing the underlying string
@@ -321,26 +319,17 @@ namespace Microsoft.MT.Common.Tokenization
                 token.origStartIndex += token.origLength;
             token.origLength = 0;          // collapse original reference, point to end of token
             token.factors = new Factors(); // nuke all factors
-            token.lemmaWordBegPrefix = false; // no prefix flag if no factors
             return token.OverrideAsIf(s);  // and implant a new string
         }
 
         // create a new token that is a narrowed version of the original
         // E.g. the Token("abcde").Narrow(1,2) will give a new token "bc".
-        // User must pass in whether the token is first or last in a split, because in presence of 0-length tokens,
-        // we cannot reliably detect the glue factors in here.  --@TODO: This is for legacy checking only, and
-        // will be removed once we no longer check against Factorize_Old().
         // If the Token still refers to its original string, then the original range
         // is narrowed as well. If not, then that's it, any further replacement will
         // be considered aligned with the entire original range.
-        public Token Narrow(int newStartIndex, int newLength, bool isFirst, bool isLast)
+        public Token Narrow(int newStartIndex, int newLength)
         {
             var token = this;
-            // @TODO: The following two should be removed once factors are only set inside Factorize()
-            if (!isFirst) // if isFirst then inherit glueLeft from original token
-                token.factors.glueLeft = Factors.GLUE_LEFT;
-            if (!isLast)
-                token.factors.glueRight = Factors.GLUE_RIGHT;
             token.startIndex += newStartIndex;
             token.length = newLength;
             if (OrigLineIs(token.line)) // still referring to the original object? (cf. function-level comment)
@@ -348,8 +337,6 @@ namespace Microsoft.MT.Common.Tokenization
                 token.origStartIndex += newStartIndex;
                 token.origLength = newLength;
             }
-            if (!isFirst)
-                token.lemmaWordBegPrefix = false; // prefix is only on the first character
             return token;
         }
 
@@ -423,14 +410,9 @@ namespace Microsoft.MT.Common.Tokenization
                 word = Word.ToUpperInvariant();
             else
                 word = Word;
-            if (modelOptions.DistinguishInitialAndInternalPieces)
-            {
+            if (modelOptions.DistinguishInitialAndInternalPieces && factors.wordBeg == Factors.WORD_BEG)
                 // with this flag set, the WORD_BEG factor also implies a _ on the lemma
-                var addPrefix = factors.wordBeg == Factors.WORD_BEG;
-                Sanity.Requires(addPrefix == lemmaWordBegPrefix, "Inconsistent prefix flags??"); // @TODO: remove this, as it's just a left-over of a local flag
-                if (addPrefix)
-                    word = WORD_BEG_PREFIX + word;
-            }
+                word = WORD_BEG_PREFIX + word;
             return word;
         }
 
@@ -534,7 +516,7 @@ namespace Microsoft.MT.Common.Tokenization
             {
                 var res = new List<Token>();
                 for (int i = 0; i + 1 < cutList.Count; i++) // (cutList includes 0 and token.s.Length)
-                    res.Add(token.Narrow(cutList[i], cutList[i + 1] - cutList[i], isFirst: i == 0, isLast: i + 1 == cutList.Count - 1));
+                    res.Add(token.Narrow(cutList[i], cutList[i + 1] - cutList[i]));
                 return res;
             }
         }
@@ -556,7 +538,7 @@ namespace Microsoft.MT.Common.Tokenization
                     if (i0 == 0 && i == token.length)
                         res.Add(token);
                     else
-                        res.Add(token.Narrow(i0, i - i0, isFirst: i0 == 0, isLast: i == token.Length));
+                        res.Add(token.Narrow(i0, i - i0));
                     i0 = i;
                 }
             }
@@ -658,8 +640,7 @@ namespace Microsoft.MT.Common.Tokenization
             var pieces = s.Split(CLASS_SEPARATOR);
             Sanity.Requires(pieces[0].Length > 0, $"Unexpected lemma of zero length in {s}");
             var lemma = DeserializeLemma(pieces[0]);
-            var lemmaWordBegPrefix = modelOptions.DistinguishInitialAndInternalPieces && lemma[0] == WORD_BEG_PREFIX[0];
-            if (lemmaWordBegPrefix)
+            if (modelOptions.DistinguishInitialAndInternalPieces && lemma[0] == WORD_BEG_PREFIX[0])
                 lemma = lemma.Substring(1); // note: empty lemma is allowed here, because WORD_BEG_PREFIX may be its own piece
             var factors = Factors.Deserialize(pieces.Skip(1));
             if (factors.index != null) // if index factor given, then lemma is merely external, but internally just empty
@@ -674,7 +655,7 @@ namespace Microsoft.MT.Common.Tokenization
                 Sanity.Requires(ALL_CLASS_LEMMAS.ContainsKey(lemma), $"Unexpected lemma {lemma} for indexed word class");
                 lemma = "";
             }
-            var token = new Token(lemma, factors, lemmaWordBegPrefix);
+            var token = new Token(lemma, factors);
             //token.Validate(modelOptions); // currently, we can only Validate() after serialized indices have been converted to a real factor. @TODO: allow to Validate() at this point
             return token;
         }
@@ -766,7 +747,9 @@ namespace Microsoft.MT.Common.Tokenization
         {
             using (var myFileStream = new FileStream(path, FileMode.Open, FileAccess.Read))
             {
-                var model = (FactoredSegmenterModel)new XmlSerializer(typeof(FactoredSegmenterModel)).Deserialize(myFileStream);
+                XmlReaderSettings readerSettings = new XmlReaderSettings();
+                readerSettings.IgnoreWhitespace = false;
+                var model = (FactoredSegmenterModel)new XmlSerializer(typeof(FactoredSegmenterModel)).Deserialize(XmlReader.Create(myFileStream, readerSettings));
 
                 // legacy: SPM was in a separate file
                 if (model.SentencePieceModel == null && (bool)model.ModelOptions.UseSentencePiece) // legacy
@@ -1223,17 +1206,6 @@ namespace Microsoft.MT.Common.Tokenization
             return res;
         }
 
-        //IEnumerable<Token> SplitTokensLINQ(IEnumerable<Token> tokens, Func<string, int, bool> ShouldSplitFunc) // apply SplitToken() to collection of items
-        //{
-        //    // slow version of above
-        //    return from token in tokens
-        //           let cutList = from i in Enumerable.Range(0, token.len + 1)
-        //                         where i == 0 || i == token.len || ShouldSplitFunc(token.line, token.pos + i)
-        //                         select i
-        //           from splitToken in token.Split(cutList)
-        //           select splitToken;
-        //}
-
         readonly IEnumerable<string> emptyStringArray = new string[] { };
 
         // determine the capitalization factor (all-lower, all-upper, cap-initial, or null if not a word) for a token
@@ -1305,7 +1277,7 @@ namespace Microsoft.MT.Common.Tokenization
                         continue;
 
                     // form token, which refers to the source range
-                    var token = wholeLineToken.Narrow(span.StartIndex, span.Length, isFirst: true, isLast: true); // cut out the token's range
+                    var token = wholeLineToken.Narrow(span.StartIndex, span.Length); // cut out the token's range
 
                     // encode it as this character sequence instead (keep outer range though)
                     if (span.EncodeAsIf != null)
@@ -1426,7 +1398,7 @@ namespace Microsoft.MT.Common.Tokenization
                 Sanity.Requires(thisStart >= prevEnd, $"Annotated spans overlap (prev end: {prevEnd}; next start: {thisStart}"); // note: zero-length spans are allowed
                 if (thisStart > prevEnd) // gap
                 {
-                    var token = wholeLineToken.Narrow(prevEnd, thisStart - prevEnd, isFirst: true, isLast: true);
+                    var token = wholeLineToken.Narrow(prevEnd, thisStart - prevEnd);
                     res.Insert(i, token); // this shifts all indices, so i++ goes to the same list item
                     continue;
                 }
@@ -1470,7 +1442,6 @@ namespace Microsoft.MT.Common.Tokenization
                      where token.Length > 0 || token.IsClass
                      from splitToken in token.SplitToken(ScriptHelpers.DetectUnambiguousWordBreaks(token.Word))
                      select splitToken;
-            //tokens = tokens.ToArray(); // @@
 
             // - FS tokenization
             //    - break at additional changes of character type (space, punct) (we already broke at script changes)
@@ -1530,7 +1501,6 @@ namespace Microsoft.MT.Common.Tokenization
             //    Now we can also distinguish them in FactoredSegmenter.)
             // Note that the Token string itself is never modified, and continues to reference the
             // original source string (if not otherwise mapped). The changes are applied on-the-fly as needed.
-            // @TODO: remove the .lemmaWordBegPrefix altogether once we remove the old code that is used for checking; this becomes an async method
             if (model.ModelOptions.DistinguishInitialAndInternalPieces)
             {
                 var tokenArray = tokens.ToArray();
@@ -1547,13 +1517,13 @@ namespace Microsoft.MT.Common.Tokenization
                     bool thisIsWord =               tokenArray[i    ].IsOfWordNature;
                     bool isContinuousScript = thisIsWord && tokenArray[i].IsContinuousScript;
                     bool isWordBeg = thisIsWord && !prevIsWord; // same condition as in Factorize()
-                    if (isWordBeg && !isContinuousScript)       // condition for WORD_BEG
-                        tokenArray[i].lemmaWordBegPrefix = true;
+                    var lemmaWordBegPrefix = isWordBeg && !isContinuousScript;
+                    yield return (token: tokenArray[i], lemmaWordBegPrefix: lemmaWordBegPrefix);
                 }
-                tokens = tokenArray;
             }
-            return from token in tokens
-                   select (token, token.lemmaWordBegPrefix);
+            else
+                foreach (var token in tokens)
+                    yield return (token: token, lemmaWordBegPrefix: false);
         }
 
         // encode a line into the tokens that the SentencePiece training should see,
@@ -1579,7 +1549,7 @@ namespace Microsoft.MT.Common.Tokenization
         /// <summary>
         /// Opaque object to pass information from Encode() to Decode()
         /// </summary>
-        internal class DecoderPackage : IDecoderPackage // @TODO: rename to something more abstract, and move to FactoredSegmenter
+        internal class DecoderPackage : IDecoderPackage
         {
             internal Encoded Encoded { get; set; } // original token-index indexable encoded tokens, for alignment lookup and mapping
 
@@ -1670,177 +1640,6 @@ namespace Microsoft.MT.Common.Tokenization
             }
         }
 
-        //void CheckForUnencodable(Token token)
-        //{
-        //    //if (token.Length == 0 || token.First() <= ' ')
-        //    //    return new[] { token };
-        //    var ntok = token.SubStringNormalized();
-        //    var split = spmCoder.Split(ntok); // @BUGBUG: Can SubStringNormalized() ever turn a non-surrogate pair to one, or vice versa? Then the offsets are not correct.
-        //    var tokens = token.SplitToken(split); // SentencePiece only receives case-normalized inputs
-        //    // @TODO: this is not efficient; if it works, this needs to be made more efficient, by reusing the normalized string
-        //    foreach (var t in tokens)
-        //    {
-        //        //if (t.Length <= 2) // (2 to allow for surrogate pairs; if we use the normalized string, we can test its first char)
-        //        //{
-        //            var c = t.SubStringNormalized();
-        //            if (/*c.Length == 1 &&*/ !model.KnownLemmas.Contains(c)) // @TODO: change to KnownChars
-        //            {
-        //                Logger.WriteLine($"Unknown lemma character {c}");
-        //            }
-        //        //}
-        //    }
-        //}
-
-        // apply FactoredSegmenter transformations to pre-segmented input
-        //  - add all factors (except index  --@TODO: may move into a serialized form anyway)
-        //  - elide space tokens (by encoding space information in surrounding token factors)
-        //  - other transforms such as unencodables and class-token index
-        // This adds all factors, and elides space tokens.
-        private IEnumerable<Token> Factorize_Old(IEnumerable<Token> tokens) // using _Old name so that one does not accidentally change this function
-        {
-            // add the glue factors
-            var tokenArray = tokens.ToArray();
-            for (int i = 0; i < tokenArray.Length; i++)
-            {
-                tokenArray[i].factors.glueLeft  = i == 0 ? Factors.GLUE_LEFT_NOT : Factors.GLUE_LEFT;
-                tokenArray[i].factors.glueRight = i + 1 == tokenArray.Length ? Factors.GLUE_RIGHT_NOT : Factors.GLUE_RIGHT;
-            }
-
-            // fix unencodables; that is, anything that Marian would consider <unk>
-            //foreach (var token in tokens)
-            //    CheckForUnencodable(token);
-
-            // - FS case factors
-            //    - add token-level factors for init-caps and all-caps
-            SetCapitalizationFactors(tokenArray);
-            //tokens = tokens.ToArray(); // @@
-
-#if true    // workaround for Bug #101419 "Training of allcaps factors is inconsistent"
-            if (model.ModelOptions.UseContextDependentSingleLetterCapitalizationFactors)
-                MakeContextDependentSingleLetterCapitalizationFactors(tokenArray);
-            // @TODO: It makes always sense to keep sequences of single uppercase as all-caps
-#endif
-
-            // - FS space elision
-            //    - rule: remove space if would be reconstructed by not having a glue; keep otherwise
-            //    - delete space chars that have surrounding glue on both sides, and delete the glues as well
-            //    - except handle sequences of space chars
-            //       - n=2 spaces: no glue space with glue right     (will be serialized as \x20)
-            //       - n>2 spaces: no glue space*(n-1) no glue      --@TODO: not handled yet; currently multiple \x20|> I guess
-            //tokenArray = tokens.ToArray();
-            for (var i = 0; i < tokenArray.Length; i++)
-            {
-                if (tokenArray[i].factors.spanClass == null &&
-                    tokenArray[i].Length == 1 && tokenArray[i].First() == ' ' &&
-                    i - 1 >= 0 && tokenArray[i - 1].factors.glueRight == Factors.GLUE_RIGHT &&
-                    i + 1 < tokenArray.Length && tokenArray[i + 1].factors.glueLeft == Factors.GLUE_LEFT)
-                {
-                    tokenArray[i - 1].factors.glueRight = Factors.GLUE_RIGHT_NOT;
-                    tokenArray[i + 1].factors.glueLeft  = Factors.GLUE_LEFT_NOT;
-                    tokenArray[i]                       = tokenArray[i].Narrow(0, 0, isFirst: true, isLast: true); // indicates that this token will be stripped right after this loop
-                    tokenArray[i].factors.glueRight     = tokenArray[i - 1].factors.glueRight;   // next iteration must see through this, which should be considered deleted
-                }
-            }
-            // @TODO: make the condition more directly recognize the token being nuked in the loop above
-            tokens = from token in tokenArray where (token.Length != 0 || token.factors.spanClass != null || token.lemmaWordBegPrefix) select token;
-
-            // - FS glue factorization
-            //    - rule: glues are or-ed, one glue is sufficient
-            //    - remove left glue and right glue from letter sequences
-            //      except keep both if between two letter sequences
-            // alternative:
-            //    - for tokens that are word pieces (incl. numbers and CJK segments), replace
-            //      glue info with word-boundary info
-            tokenArray = tokens.ToArray();
-            for (var i = 0; i < tokenArray.Length; i++)
-            {
-                var thisIsWordPiece = tokenArray[i].IsOfWordNature;
-                if (!thisIsWordPiece)
-                    continue;
-                var lastIsWordPiece = i - 1 >= 0                 ? tokenArray[i - 1].IsOfWordNature : false;
-                var nextIsWordPiece = i + 1 < tokenArray.Length  ? tokenArray[i + 1].IsOfWordNature : false;
-                var lastGluesRight  = i - 1 >= 0                 ? tokenArray[i - 1].factors.glueRight == Factors.GLUE_RIGHT : false;
-                var thisGluesLeft   =                              tokenArray[i    ].factors.glueLeft  == Factors.GLUE_LEFT;
-                var thisGluesRight  =                              tokenArray[i    ].factors.glueRight == Factors.GLUE_RIGHT;
-                var nextGluesLeft   = i + 1 < tokenArray.Length  ? tokenArray[i + 1].factors.glueLeft  == Factors.GLUE_LEFT : false;
-                Sanity.Requires(lastGluesRight == thisGluesLeft, "Left glue inconsistent");
-                Sanity.Requires(nextGluesLeft == thisGluesRight, "Right glue inconsistent");
-                // word-boundary factors
-                var isWordBeg = !lastIsWordPiece || !lastGluesRight;
-                var isWordEnd = !nextIsWordPiece || !nextGluesLeft;
-
-                // if CJK then use special begin/end instead, since spacing behavior is different
-                bool isContinuousScript = tokenArray[i].IsContinuousScript;
-                if (isContinuousScript)
-                    tokenArray[i].factors.csBeg = isWordBeg ? Factors.CS_BEG : Factors.CS_BEG_NOT;
-                else
-                    tokenArray[i].factors.wordBeg = isWordBeg ? Factors.WORD_BEG : Factors.WORD_BEG_NOT;
-                if (model.ModelOptions.RightWordGlue)
-                {
-                    if (isContinuousScript)
-                        tokenArray[i].factors.csEnd = isWordEnd ? Factors.CS_END : Factors.CS_END_NOT;
-                    else
-                        tokenArray[i].factors.wordEnd = isWordEnd ? Factors.WORD_END : Factors.WORD_END_NOT;
-                }
-            }
-            // remove glue factors from words; they store boundary information instead
-            for (var i = 0; i < tokenArray.Length; i++)
-            {
-                if (tokenArray[i].IsOfWordNature)
-                {
-                    tokenArray[i].factors.glueLeft  = null;
-                    tokenArray[i].factors.glueRight = null;
-                }
-            }
-
-            // enforce word break on the left for phrase fixes
-            // The {word} lemma only exists with a word-start context.
-            // This was needed for DistinguishInitialAndInternalPieces mode.  @TODO: remove. It is no longer needed.
-            // @BUGBUG: Will incorrectly imply a space for numerals embedded in words, or Latin words embedded in CJT, if phrase-fixed.
-            //if (model.ModelOptions.DistinguishInitialAndInternalPieces)
-            //{
-            //    for (var i = 0; i < tokenArray.Length; i++)
-            //    {
-            //        if (tokenArray[i].IsClass && tokenArray[i].factors.wordBeg != Factors.WORD_BEG)
-            //        {
-            //            Sanity.Requires(tokenArray[i].factors.glueLeft == null && tokenArray[i].factors.glueRight == null, "Class token still has glue factors??");
-            //            tokenArray[i].factors.wordBeg = Factors.WORD_BEG;
-            //            tokenArray[i].lemmaWordBegPrefix = model.ModelOptions.DistinguishInitialAndInternalPieces;
-            //        }
-            //    }
-            //}
-
-            // convert if DistinguishInitialAndInternalPieces
-            // If DistinguishInitialAndInternalPieces, we use WORD_INT instead of WORD_BEG_NOT (which is never used).
-            if (model.ModelOptions.DistinguishInitialAndInternalPieces)
-            {
-                for (var i = 0; i < tokenArray.Length; i++)
-                {
-                    var token = tokenArray[i]; // for easier debugging
-                    if (!tokenArray[i].IsOfWordNature || tokenArray[i].IsContinuousScript)
-                        continue;
-#if false           // numerals and Latin characters surrounded by Kanji do not have word boundaries
-                    // @TODO: It seems they should. Is it representable whether there is a space a or not if they do?
-                    if (tokenArray_Old[i].lemmaWordBegPrefix && tokenArray_Old[i].factors.wordBeg != Factors.WORD_BEG)
-                        tokenArray_Old[i].factors.wordBeg = Factors.WORD_BEG;
-#endif
-                    Sanity.Requires(tokenArray[i].lemmaWordBegPrefix == (tokenArray[i].factors.wordBeg == Factors.WORD_BEG),
-                        $"lemmaWordBegPrefix inconsistent with WORD_BEG factor?? [Old] {tokenArray[i]}");
-                    if (tokenArray[i].factors.wordBeg == Factors.WORD_BEG_NOT)
-                    {
-                        tokenArray[i].factors.wordBeg = null;
-                        tokenArray[i].factors.wordInt = Factors.WORD_INT;
-                    }
-                    //Sanity.Requires(tokenArray[i].factors.wordBeg != Factors.WORD_BEG_NOT,
-                    //    "WORD_BEG_NOT used with DistinguishInitialAndInternalPieces??");
-                }
-            }
-            Sanity.Requires(!model.ModelOptions.DistinguishInitialAndInternalPieces || tokenArray.All(t => t.factors.wordBeg != Factors.WORD_BEG_NOT),
-                            "WORD_BEG_NOT used with DistinguishInitialAndInternalPieces??");
-            tokens = tokenArray;
-            return tokens;
-        }
-
         // set the capitalization factor for every entry in the tokenArray, e.g. "HELLO" -> HELLO|ca
         private void SetCapitalizationFactors(Token[] tokenArray)
         {
@@ -1893,10 +1692,6 @@ namespace Microsoft.MT.Common.Tokenization
             int iLastNonElidedSpace = -1; // index i of last emitted token, equal to i-1 except after an elided space
             for (int i = 0; i < tokenArray.Length; i++)
             {
-#if true        // Narrow() still sets these factors to allow Factorize_Old() to run. Clear them out. @TODO: Remove this once Factorize_Old() is gone.
-                tokenArray[i].factors.glueLeft  = null;
-                tokenArray[i].factors.glueRight = null;
-#endif
                 var iPrev = i - 1;
                 var iNext = i + 1;
 
@@ -1988,10 +1783,6 @@ namespace Microsoft.MT.Common.Tokenization
                         if (isContinuousScript) token.factors.csEnd   = isWordEnd ? Factors.CS_END   : Factors.CS_END_NOT;
                         else                    token.factors.wordEnd = isWordEnd ? Factors.WORD_END : Factors.WORD_END_NOT;
                     }
-                    if (diip && !isContinuousScript) // consistency check with a local variable that no longer has an effect after this point
-                        Sanity.Requires( token.lemmaWordBegPrefix == (token.factors.wordBeg == Factors.WORD_BEG) &&
-                                        !token.lemmaWordBegPrefix == (token.factors.wordInt == Factors.WORD_INT),
-                                        $"lemmaWordBegPrefix inconsistent with WORD_BEG factor in {token}??");
                     tokenList.Add(token);
                     iLastNonElidedSpace = i;
                 }
@@ -2276,20 +2067,7 @@ namespace Microsoft.MT.Common.Tokenization
             // - apply FactoredSegmenter transformations
             //    - further splitting
             //    - collapse spacing information in punctuation and word-boundary info
-            // for now, we test this against the old version of the function in non-runtime 
-            // scenarios, to make sure we don't introduce a regression.
-            if (IsTrainingScenario)
-            {
-                var tokensRef = Factorize_Old(tokens); // old implementation for reference
-                tokens = Factorize(tokens);            // MAIN implementation
-                Sanity.Requires(tokens.Count() == tokensRef.Count(), "New Factorize is incompatible (length)");
-                for (int i = 0; i < tokens.Count(); i++)
-                    Sanity.Requires((tokens as Token[])[i].Equals((tokensRef as Token[])[i]) ||
-                        (tokens as Token[])[i].factors.spanClass == Factors.CLASS_FACTORS[AnnotatedSpanClassType.PhraseFix], // these are meant to have changed
-                        $"new Factorize is incompatible (token {i})");
-            }
-            else
-                tokens = Factorize(tokens);
+            tokens = Factorize(tokens);
 
             // some sanity checks
             foreach (var token in tokens)
@@ -2311,7 +2089,7 @@ namespace Microsoft.MT.Common.Tokenization
                 var annotationTokens = from type in model.ModelOptions.SourceSentenceAnnotationTypeList
                                        let value = sourceSentenceAnnotations[type]
                                        let tokenString = ToSentenceAnnotationTokenString(type, value)
-                                       select wholeLineToken.Narrow(0, 0, true, true).OverrideAsIf(tokenString); // align with the entire sentence
+                                       select wholeLineToken.Narrow(0, 0).OverrideAsIf(tokenString); // align with the entire sentence
                 Sanity.Requires(sourceSentenceAnnotations.Keys.Count() == annotationTokens.Count(), $"Sentence annotation must contain exactly one entry for each type in mode option SourceSentenceAnnotationTypes");
                 tokens = annotationTokens.Concat(tokens);
             }
@@ -2812,7 +2590,7 @@ namespace Microsoft.MT.Common.Tokenization
                     Assert.IsFalse(fsm.Test("Tag <b>bold</b> yeah<br>! W<b>o</b>rd <br> here.", annotatedSpans: new List<AnnotatedSpan> {
                         new AnnotatedSpan( 4, 3, null, encodeAsIf: ""), new AnnotatedSpan(11, 4, null, encodeAsIf: ""), new AnnotatedSpan(20, 4, null, encodeAsIf: ""),
                         new AnnotatedSpan(27, 3, null, encodeAsIf: ""), new AnnotatedSpan(31, 4, null, encodeAsIf: ""), new AnnotatedSpan(38, 4, null, encodeAsIf: "") }));  // check directedness of space
-                    Assert.IsFalse(fsm.Test("Añadido un artículo acerca de la banda de Leisha <c0> .", annotatedSpans: new List<AnnotatedSpan> { new AnnotatedSpan(49, 4, null, encodeAsIf: "") }));  // failed Factorize_Old() test
+                    Assert.IsFalse(fsm.Test("Añadido un artículo acerca de la banda de Leisha <c0> .", annotatedSpans: new List<AnnotatedSpan> { new AnnotatedSpan(49, 4, null, encodeAsIf: "") }));
                     // ^^ must be IsFalse since the tag is removed in the decoded string
                     Assert.IsTrue(fsm.Test("(ง'̀-'́) ง", numSegmentsBeforeSPM: 9));  // really creative Emoji with Thai character followed by apostrophe followed by accent combiner
                     Assert.IsTrue(fsm.Test("A photo posted by ⓐⓝⓓⓡⓔⓨ ⓟⓞⓝⓞⓜⓐⓡⓔⓥ✔️ (@a_ponomarev) on Mar 30, 2015 at 4:05am PDT", numSegmentsBeforeSPM: 41)); // letters in circles should not get capitalization factor
