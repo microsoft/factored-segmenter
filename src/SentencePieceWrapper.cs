@@ -2,7 +2,6 @@
 using Common.Collections.Extensions;
 using Common.Contracts;
 using Common.IO;
-using Common.Text;
 using Common.Utils;
 using System;
 using System.Collections.Generic;
@@ -85,7 +84,7 @@ namespace Microsoft.MT.Common.Tokenization
                 File.WriteAllLines(tempSPMModelPath + $".{spmVocab.Length}.counts", // save it for diagnostics only
                     from kvp in counts orderby -kvp.Value, kvp.Key select $"{kvp.Key}\t{kvp.Value}");
                 // count number of SPM vocab items that should be kept (above the threshold or single character which we always keep)
-                var spmVocabSet = spmVocab.ToHashSet();
+                var spmVocabSet = new HashSet<string>(spmVocab);
                 int adjustedVocabSize = counts.Count(kvp => spmVocabSet.Contains(kvp.Key) && (kvp.Key.Length == 1 || kvp.Value >= minPieceCount));
                 // if there are units below the threshold, reduce the SPM vocab size and retrain
                 if (adjustedVocabSize < spmVocab.Length)
@@ -162,7 +161,7 @@ namespace Microsoft.MT.Common.Tokenization
                             select arg; // unroll into form --arg1 argval1 --arg2 argval2 ...
             args.AddRange(extraArgs);
             var envirVariables = new Dictionary<string, string> { { "LC_ALL", "C" } }; // (not sure if this matters; better safe than sorry)
-            ProcessTool.RunCommand(exe, ProcessTool.ArgsToCommandLine(args), null, modelPrefix + ".log", throwOnFailure: true, envirVariables: envirVariables);
+            ProcessTools.RunCommand(exe, ProcessTools.ArgsToCommandLine(args), null, modelPrefix + ".log", throwOnFailure: true, envirVariables: envirVariables);
         }
 
         // helper to fetch .model and .vocab file written out by SPMTrain above into in-memory variables
@@ -247,7 +246,7 @@ namespace Microsoft.MT.Common.Tokenization
         /// <param name="s">Character sequence to split.</param>
         /// <param name="adjustForWordBegPrefix">If true, s has a leading _. Subtract 1 from every offset.</param>
         /// <returns>List of split offsets (including 0 and the string length) or null if not split.</returns>
-        public int[] Split(string s, bool adjustForWordBegPrefix = false) => CachedFunction.Memoize(m_splitCache, s, x =>
+        public int[] Split(string s, bool adjustForWordBegPrefix = false) => CachedFunction.Memoize<int[], string>(m_splitCache, s, x =>
         {
             var cutList = spm.GetSplitPoints(x);
             if (adjustForWordBegPrefix && cutList != null) // source string had leading boundary prefix--account for it
