@@ -2286,7 +2286,7 @@ namespace Microsoft.MT.Common.Tokenization
 
             // need an explicit List for insertion, since IList may be an array
             List<Token> workingOutputTokens    = hypTokens.ToList();
-            List<bool>  workingTokenValidFlags = hypTokenValidFlags.ToList();
+            List<bool>  workingTokenValidFlags = hypTokenValidFlags?.ToList();
 
             // if absent in the output insert it in the correct place according to the alignment information.
             foreach (var missingInputPhrasefix in missingPhrasefixTokens)
@@ -2306,7 +2306,8 @@ namespace Microsoft.MT.Common.Tokenization
 
             // assuming this is a phrasefix situation, hence take the first one and apply the translations.
             hypTokens.Insert(targetIndex, missingPhrasefix);
-            hypTokenValidFlags.Insert(targetIndex, true);
+            if (hypTokenValidFlags != null)
+                hypTokenValidFlags.Insert(targetIndex, true);
 
             // account for this additional link in the alignment info.
             alignment = alignment.InsertMissingTarget(srcIndex, targetIndex);
@@ -2366,7 +2367,7 @@ namespace Microsoft.MT.Common.Tokenization
                 (tokens, tokenValidFlags) = InsertMissingPhrasefixes(tokens, tokenValidFlags, ref alignmentFromMT, encodedTokens); 
             }
 
-            Sanity.Requires(tokens.Count == tokenValidFlags.Count, "tokenValidFlags must have same length as tokens");
+            Sanity.Requires(tokenValidFlags == null || tokens.Count == tokenValidFlags.Count, "tokenValidFlags must have same length as tokens");
 
             var alignmentLinks = alignmentFromMT?.Links;
             // create associated alignment-link arrays
