@@ -2253,40 +2253,60 @@ namespace Microsoft.MT.Common.Tokenization
             }
         }
 
-        // phrasefix is special. i.e. we always want to correctly have a phrasefix replaced.
-        // sometimes, the model drops the phrasefix. In that case, we do have to find for those cases and put them back in tgt
-        // we put this in the correct location using the alignment and modify the same.
-        // outputTokens is modified in-place, as is alignmentFromMT
-        private void InsertMissingPhrasefixes(IList<Token> outputTokens, ref Alignment alignmentFromMT, IEnumerable<Token> inputTokens)
+        /// <summary>
+        /// phrasefix is special. i.e. we always want to correctly have a phrasefix replaced.
+        /// sometimes, the model drops the phrasefix. In that case, we do have to find for those cases and put them back in tgt
+        /// we put this in the correct location using the alignment and modify the same.
+        /// alignmentFromMT is modifiedInPlace
+        /// </summary>
+        /// <param name="hypTokens">decoded tokens before inserting missing phrasefixes</param>
+        /// <param name="hypTokenValidFlags">bool per outputToken, indicating whether it should be kept (true) or cleaned up (false) later</param>
+        /// <param name="alignmentFromMT">token to token alignments output by the MT model. Will be modified in place if necessary. 
+        /// @TODO: this should be part of the return type rather than modifying in place. (work item #109161)</param>
+        /// <param name="sourceTokens">source side tokens - any phrasefix tokens here must appear in the output</param>
+        /// <returns>copies of outputTokens and tokenValidFlags with missing phrasefixes (and corresponding valid flag) inserted where necessary.</returns>
+        private (IList<Token> ResultingOutputTokens, IList<bool> ResultingTokenValidFlags) 
+            InsertMissingPhrasefixes(IList<Token> hypTokens, IList<bool> hypTokenValidFlags, ref Alignment alignmentFromMT, IEnumerable<Token> sourceTokens)
         {
             // find any missing phrasefix and insert it here.
             // you can search for classphrasefix tokens in src missing in tgt and add them to appropriate location in tgt
             // when it works, this is what we get:
             //  src - {word}|cn|wb|classphrasefix|index032
             //  tgt - {word}|cn|classphrasefix|index032|wb
-            var allInputPhraseFixes  = FindAllPhrasefixTokens(inputTokens);
-            var allOutputPhraseFixes = FindAllPhrasefixTokens(outputTokens);
+            var allSourcePhraseFixes  = FindAllPhrasefixTokens(sourceTokens);
+            var AllHypPhraseFixes     = FindAllPhrasefixTokens(hypTokens);
 
-            foreach (var inputToken in allInputPhraseFixes)
-            {
-                // if absent in the ouput insert it in the correct place according to the alignment information.
-                string indexInfo = inputToken.Value.factors.index.Serialized;
-                if (allOutputPhraseFixes.Values.Where(t => t.factors.index.Serialized == indexInfo).Count() == 0)
-                    InsertDroppedToken(inputToken.Key, inputToken.Value, outputTokens, ref alignmentFromMT);
-            }
+            KeyValuePair<int, Token>[] missingPhrasefixTokens = 
+                allSourcePhraseFixes.Where(inputPF =>
+                    !AllHypPhraseFixes.Any(outputPF => outputPF.Value.factors.index.Serialized == inputPF.Value.factors.index.Serialized))
+                .ToArray();
+
+            if (missingPhrasefixTokens.Length == 0)
+                return (hypTokens, hypTokenValidFlags);
+
+            // need an explicit List for insertion, since IList may be an array
+            List<Token> workingOutputTokens    = hypTokens.ToList();
+            List<bool>  workingTokenValidFlags = hypTokenValidFlags.ToList();
+
+            // if absent in the output insert it in the correct place according to the alignment information.
+            foreach (var missingInputPhrasefix in missingPhrasefixTokens)
+                InsertDroppedToken(missingInputPhrasefix.Key, missingInputPhrasefix.Value, workingOutputTokens, workingTokenValidFlags, ref alignmentFromMT);
+
+            return (workingOutputTokens, workingTokenValidFlags);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        static void InsertDroppedToken(int srcIndex, Token missingPhrasefix, IList<Token> outputTokens, ref Alignment alignment)
+        static void InsertDroppedToken(int srcIndex, Token missingPhrasefix, List<Token> hypTokens, List<bool> hypTokenValidFlags, ref Alignment alignment)
         {
             // what's a good place to insert this token?
             int targetIndex = alignment.GetTargetIndexToInsert(srcIndex);
 
-            if (outputTokens.Count < targetIndex || targetIndex == -1)
-                targetIndex = outputTokens.Count;
+            if (hypTokens.Count < targetIndex || targetIndex == -1)
+                targetIndex = hypTokens.Count;
 
             // assuming this is a phrasefix situation, hence take the first one and apply the translations.
-            outputTokens.Insert(targetIndex, missingPhrasefix);
+            hypTokens.Insert(targetIndex, missingPhrasefix);
+            hypTokenValidFlags.Insert(targetIndex, true);
 
             // account for this additional link in the alignment info.
             alignment = alignment.InsertMissingTarget(srcIndex, targetIndex);
@@ -2329,6 +2349,7 @@ namespace Microsoft.MT.Common.Tokenization
             // tokens to invalid tokens (e.g. {unk,...}|... <6> <5> <#> --> a|... INVALID INVALID INVALID).
             // This way, alignment information from Marian is kept intact. We will eliminate
             // those entries further down in this function, right before decoding into surface form.
+            // NOTE: in some (newer) models, phrase fix tokens are also encoded using serialized sequences like this.
             IList<bool> tokenValidFlags = null; // invalidFlags[i] = true means tokens[i] is INVALID
             if (model.ModelOptions.SerializeIndicesAndUnrepresentables)
                 (tokens, tokenValidFlags) = DeserializeIndicesAndUnrepresentablesInPlace(tokens);
@@ -2339,8 +2360,13 @@ namespace Microsoft.MT.Common.Tokenization
                 IList<Token> encodedTokens = decoderPackage?.Encoded.encodedTokens;
                 if (model.ModelOptions.SerializeIndicesAndUnrepresentables)
                     encodedTokens = DeserializeIndicesAndUnrepresentablesInPlace(encodedTokens).tokens;
-                InsertMissingPhrasefixes(tokens, ref alignmentFromMT, encodedTokens); // will update 'tokens' in-place and replace the 'alignmentFromMT' pointer
+
+                // will update 'tokens' in-place and replace the 'alignmentFromMT' pointer
+                // it may make more sense to do this operation using alignment links below, but for now, the algorithm requires legacy alignments
+                (tokens, tokenValidFlags) = InsertMissingPhrasefixes(tokens, tokenValidFlags, ref alignmentFromMT, encodedTokens); 
             }
+
+            Sanity.Requires(tokens.Count == tokenValidFlags.Count, "tokenValidFlags must have same length as tokens");
 
             var alignmentLinks = alignmentFromMT?.Links;
             // create associated alignment-link arrays
