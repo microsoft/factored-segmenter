@@ -246,7 +246,8 @@ namespace Microsoft.MT.Common.Tokenization
         /// <param name="s">Character sequence to split.</param>
         /// <param name="adjustForWordBegPrefix">If true, s has a leading _. Subtract 1 from every offset.</param>
         /// <returns>List of split offsets (including 0 and the string length) or null if not split.</returns>
-        public int[] Split(string s, bool adjustForWordBegPrefix = false) => CachedFunction.Memoize<int[], string>(m_splitCache, s, x =>
+        public int[] Split(string s, bool adjustForWordBegPrefix = false) => CachedFunction.Memoize(m_splitCache, s, x =>
+        //public int[] Split(string s, bool adjustForWordBegPrefix = false) => CachedFunction.Memoize<int[], string>(m_splitCache, s, x =>
         {
             var cutList = spm.GetSplitPoints(x);
             if (adjustForWordBegPrefix && cutList != null) // source string had leading boundary prefix--account for it

@@ -1514,11 +1514,11 @@ namespace Microsoft.MT.Common.Tokenization
                         while (iPrev >= 0 && tokenArray[iPrev].factors.inlineFix == Factors.INLINE_FIX_WHAT)
                             iPrev--;
                     bool prevIsWord = iPrev >= 0 && tokenArray[iPrev].IsOfWordNature;
-                    bool thisIsWord =               tokenArray[i    ].IsOfWordNature;
+                    bool thisIsWord         =               tokenArray[i].IsOfWordNature;
                     bool isContinuousScript = thisIsWord && tokenArray[i].IsContinuousScript;
                     bool isWordBeg = thisIsWord && !prevIsWord; // same condition as in Factorize()
                     var lemmaWordBegPrefix = isWordBeg && !isContinuousScript;
-                    yield return (token: tokenArray[i], lemmaWordBegPrefix: lemmaWordBegPrefix);
+                    yield return (tokenArray[i], lemmaWordBegPrefix);
                 }
             }
             else
@@ -2060,7 +2060,7 @@ namespace Microsoft.MT.Common.Tokenization
                          let lemmaWordBegPrefix = tf.lemmaWordBegPrefix
                          from splitToken in token.SplitToken(spmCoder.Split(token.SubStringNormalizedForSPM(lemmaWordBegPrefix), adjustForWordBegPrefix: lemmaWordBegPrefix))
                          select splitToken;
-            else if (model.ModelOptions.DistinguishInitialAndInternalPieces) // this is only used for Factorize_Old() (consistency check)
+            else if (model.ModelOptions.DistinguishInitialAndInternalPieces)
                 tokens = from tf in TokensWithLemmaWordBegPrefix(tokens)
                          select tf.token;
 
@@ -2595,6 +2595,4 @@ namespace Microsoft.MT.Common.Tokenization
             }
         }
     }
-
-    
 }
