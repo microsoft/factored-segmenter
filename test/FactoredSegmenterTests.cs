@@ -65,12 +65,12 @@
                 Assert.IsTrue(fsm.Test("I wake up at 16:45...", numSegmentsBeforeSPM: 14));
                 Assert.IsTrue(fsm.Test(""));  // must handle empty strings gracefully
                 Assert.IsTrue(fsm.Test("0\u0948", numSegmentsBeforeSPM: 2));  // Devanaagari diacritic applied to digit: must split off diigt
-#if true            // breaking Hiragana from Kanji
+#if true        // breaking Hiragana from Kanji
                 Assert.IsTrue(fsm.Test("超ハッピーな人です。", numSegmentsBeforeSPM: 6));  // should break Katakana vs. Han
                 Assert.IsTrue(fsm.Test("飲む", numSegmentsBeforeSPM: 2));  // should break Hiragana vs. Han
-#else               // not breaking Hiragana from Kanji; works a little worse
-                    Assert.IsTrue(fsm.Test("超ハッピーな人です。", numSegmentsBeforeSPM: 4));  // should break Katakana vs. Han
-                    Assert.IsTrue(fsm.Test("飲む", numSegmentsBeforeSPM: 1));  // should not break Hiragana vs. Han
+#else           // not breaking Hiragana from Kanji; works a little worse
+                Assert.IsTrue(fsm.Test("超ハッピーな人です。", numSegmentsBeforeSPM: 4));  // should break Katakana vs. Han
+                Assert.IsTrue(fsm.Test("飲む", numSegmentsBeforeSPM: 1));  // should not break Hiragana vs. Han
 #endif
                 Assert.IsTrue(fsm.Test("アメリカ，いいえ", numSegmentsBeforeSPM: 3));  // should use continuous script
                 Assert.IsTrue(fsm.Test("२०१४ से २०१९ तक", numSegmentsBeforeSPM: 13)); // should split the digits (unicode 0x0966 to 096F)
@@ -212,11 +212,10 @@
         {
             var emptyAlignment = new Common.MT.Segments.Alignment();
 
-            bool first = true;
             // if there are phrasefix tokens in the source but not the target, they should be added back in heuristically.
             foreach (var fsm in ModelsToTest(includeInlineFixes: false))
             {
-                var encodedWithPF = fsm.Encode("A test.", new List<AnnotatedSpan> { new AnnotatedSpan(2, 4, AnnotatedSpanClassType.PhraseFix, AnnotatedSpanInstructions.ForceDecodeAs, "fix") });
+                var encodedWithPF = fsm.Encode("A test.", new List<AnnotatedSpan> { new AnnotatedSpan(2, 4, AnnotatedSpanClassType.PhraseFix, /*AnnotatedSpanInstructions.ForceDecodeAs,*/ "fix") });
                 var encodedNoPF = fsm.Encode("A test.");
 
                 // if there are no phrasefixes in the source, none will need to be added to the target.
@@ -242,7 +241,7 @@
                                                          rightWordGlue: true);
 
             // {▁A|scu|wb|we ▁{word}|cn|wb|we|classphrasefix <9> <#> .|gl+|gr-}
-            var encodedWithPFSerialized = serializeIndicesFsm.Encode("A test.", new List<AnnotatedSpan> { new AnnotatedSpan(2, 4, AnnotatedSpanClassType.PhraseFix, AnnotatedSpanInstructions.ForceDecodeAs, "fix") });
+            var encodedWithPFSerialized = serializeIndicesFsm.Encode("A test.", new List<AnnotatedSpan> { new AnnotatedSpan(2, 4, AnnotatedSpanClassType.PhraseFix, /*AnnotatedSpanInstructions.ForceDecodeAs,*/ "fix") });
 
             // Reusing the encoded string as decoded, but stripping the digit tokens will produce a phrasefix token with
             // null index factor. 
