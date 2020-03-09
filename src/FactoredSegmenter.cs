@@ -2265,8 +2265,11 @@ namespace Microsoft.MT.Common.Tokenization
         /// @TODO: this should be part of the return type rather than modifying in place. (work item #109161)</param>
         /// <param name="sourceTokens">source side tokens - any phrasefix tokens here must appear in the output</param>
         /// <returns>copies of outputTokens and tokenValidFlags with missing phrasefixes (and corresponding valid flag) inserted where necessary.</returns>
-        private (IList<Token> ResultingOutputTokens, IList<bool> ResultingTokenValidFlags) 
-            InsertMissingPhrasefixes(IList<Token> hypTokens, IList<bool> hypTokenValidFlags, ref Alignment alignmentFromMT, IEnumerable<Token> sourceTokens)
+        private (IList<Token> ResultingOutputTokens, IList<bool> ResultingTokenValidFlags) InsertMissingPhrasefixes(
+            IList<Token>       hypTokens, 
+            IList<bool>        hypTokenValidFlags, 
+            ref Alignment      alignmentFromMT, 
+            IEnumerable<Token> sourceTokens)
         {
             // find any missing phrasefix and insert it here.
             // you can search for classphrasefix tokens in src missing in tgt and add them to appropriate location in tgt
@@ -2274,11 +2277,13 @@ namespace Microsoft.MT.Common.Tokenization
             //  src - {word}|cn|wb|classphrasefix|index032
             //  tgt - {word}|cn|classphrasefix|index032|wb
             var allSourcePhraseFixes  = FindAllPhrasefixTokens(sourceTokens);
-            var AllHypPhraseFixes     = FindAllPhrasefixTokens(hypTokens);
+            var allHypPhraseFixes     = FindAllPhrasefixTokens(hypTokens);
 
+            // it's possible index on a hyp phrasefix token can be null, if the serialized index tokens after the phrasefix head token are malformed.
             KeyValuePair<int, Token>[] missingPhrasefixTokens = 
                 allSourcePhraseFixes.Where(inputPF =>
-                    !AllHypPhraseFixes.Any(outputPF => outputPF.Value.factors.index.Serialized == inputPF.Value.factors.index.Serialized))
+                    inputPF.Value.factors.index?.Serialized != null && 
+                    !allHypPhraseFixes.Any(outputPF => outputPF.Value.factors.index?.Serialized == inputPF.Value.factors.index.Serialized))
                 .ToArray();
 
             if (missingPhrasefixTokens.Length == 0)
@@ -2571,6 +2576,23 @@ namespace Microsoft.MT.Common.Tokenization
                     Logger.WriteLine($"Unexpected number of tokens {tokens.Length} expected {numSegmentsBeforeSPM}:\n  fsm: {" ".JoinItems(tokens)}\n  src: {s}");
             }
             return ok;
+        }
+
+        /// <summary>
+        /// Helper function for testing, remove digit tokens for a serialized index. This allows us to test 
+        /// </summary>
+        public IEnumerable<string> StripDigitTokensForTest(IEnumerable<string> tokensToStrip)
+        {
+            Sanity.Requires(this.model.ModelOptions.SerializeIndicesAndUnrepresentables, "Stripping digit tokens for testing should only be done with a model that serializes indices.");
+
+            foreach (var tok in tokensToStrip)
+            {
+                var deserializedTok = Token.Deserialize(tok, this.model.ModelOptions);
+                if (deserializedTok.IsSpecialTokenWithoutFactors)
+                    continue;
+
+                yield return tok;
+            }
         }
     }
 

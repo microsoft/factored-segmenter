@@ -18,20 +18,28 @@
     public class FactoredSegmenterTests
     {
         // helper to generate a set of models to test
-        public IEnumerable<FactoredSegmenterCoder> ModelsToTest() =>
-            new[] // test multiple model sets of model options
+        public IEnumerable<FactoredSegmenterCoder> ModelsToTest(bool includeInlineFixes = true)
+        {
+            var models = new List<FactoredSegmenterCoder>();
+
+            if (includeInlineFixes)
+                models.Add(FactoredSegmenterCoder.CreateForTest(inlineFixes: true));
+
+            models.AddRange(new[] // test multiple model sets of model options
             {
                     // uncomment this one to debug an actual SPM model
-                    //FactoredSegmenterCoder.CreateForTest(@"\\mt-data-04\humanparity_tier_1\TeacherStage2Systems\enu\kor\2019_04_30_05h_47m_08s_FS_4repl\final\enu.kor.teacher.fsm", serializeIndicesAndUnrepresentables: serializeIndicesAndUnrepresentables),
-                    FactoredSegmenterCoder.CreateForTest(inlineFixes: true),
+                    //FactoredSegmenterCoder.CreateForTest(@"\\mt-data-04\humanparity_tier_1\TeacherStage2Systems\enu\kor\2019_04_30_05h_47m_08s_FS_4repl\final\enu.kor.teacher.fsm", serializeIndicesAndUnrepresentables: serializeIndicesAndUnrepresentables),                    
                     FactoredSegmenterCoder.CreateForTest(),
                     FactoredSegmenterCoder.CreateForTest(sourceSentenceAnnotationTypes: new[]{ "target_language", "politeness" }),
                     FactoredSegmenterCoder.CreateForTest(singleLetterCaseFactors: true,
                                                          distinguishInitialAndInternalPieces: true,
                                                          serializeIndicesAndUnrepresentables: true,
                                                          rightWordGlue: true)
-            };
+            });
 
+            return models;
+
+        }
         // check whether encoding is reversible, and whether number of tokens before SPM is right
         // Note that this does not test SentencePiece segmentation, and also does not check against a full ground truth result.
         [TestMethod]
@@ -147,6 +155,7 @@
                 }
             }
         }
+
         // run training
         // A simple test that executes the training code path. The resulting model is not
         // compared to a reference, so this is more useful during debugging for manual
@@ -193,6 +202,59 @@
                                      select values).Count(), 4);
                 }
             }
+        }
+
+        /// <summary>
+        /// Test insertion of missing phrasefixes in the target.
+        /// </summary>
+        [TestMethod]
+        public void InsertMissingPhrasefixTest()
+        {
+            var emptyAlignment = new Common.MT.Segments.Alignment();
+
+            bool first = true;
+            // if there are phrasefix tokens in the source but not the target, they should be added back in heuristically.
+            foreach (var fsm in ModelsToTest(includeInlineFixes: false))
+            {
+                var encodedWithPF = fsm.Encode("A test.", new List<AnnotatedSpan> { new AnnotatedSpan(2, 4, AnnotatedSpanClassType.PhraseFix, AnnotatedSpanInstructions.ForceDecodeAs, "fix") });
+                var encodedNoPF = fsm.Encode("A test.");
+
+                // if there are no phrasefixes in the source, none will need to be added to the target.
+                var decodedNoSourcePF = fsm.Decode(encodedNoPF.TokenStrings, emptyAlignment, encodedNoPF.DecoderPackage);
+                Assert.AreEqual(0, decodedNoSourcePF.Tokens.Count(tok => tok.IsForceDecode));
+
+                // this simulates a situation where there is a phrasefix token in the source, but none appeared in the target
+                var decodedWithSourcePF = fsm.Decode(encodedNoPF.TokenStrings, emptyAlignment, encodedWithPF.DecoderPackage);
+                Assert.AreEqual(1, decodedWithSourcePF.Tokens.Count(tok => tok.IsForceDecode));
+            }
+        }
+
+        /// <summary>
+        /// Test that we can handle the case where there's a null index factor on a phrasefix token in the output.
+        /// </summary>
+        [TestMethod]
+        public void InsertMissingPhrasefix_MangledIndexTokensTest()
+        {
+            var emptyAlignment = new Common.MT.Segments.Alignment();
+            var serializeIndicesFsm = FactoredSegmenterCoder.CreateForTest(singleLetterCaseFactors: true,
+                                                         distinguishInitialAndInternalPieces: true,
+                                                         serializeIndicesAndUnrepresentables: true,
+                                                         rightWordGlue: true);
+
+            // {▁A|scu|wb|we ▁{word}|cn|wb|we|classphrasefix <9> <#> .|gl+|gr-}
+            var encodedWithPFSerialized = serializeIndicesFsm.Encode("A test.", new List<AnnotatedSpan> { new AnnotatedSpan(2, 4, AnnotatedSpanClassType.PhraseFix, AnnotatedSpanInstructions.ForceDecodeAs, "fix") });
+
+            // Reusing the encoded string as decoded, but stripping the digit tokens will produce a phrasefix token with
+            // null index factor. 
+            // {▁A|scu|wb|we ▁{word}|cn|wb|we|classphrasefix .|gl+|gr-}
+            var mangledDecodedTokenStrings = serializeIndicesFsm.StripDigitTokensForTest(encodedWithPFSerialized.TokenStrings);
+
+            // The output contains a malformed phrasefix. This should be deleted, but a correct one (matching the input)
+            // should be inserted. It's difficult to verify directly that this is happening without breaking encapsulation,
+            // but this will exercise the relevant code paths.
+            var mangledDecoded = serializeIndicesFsm.Decode(mangledDecodedTokenStrings, emptyAlignment, encodedWithPFSerialized.DecoderPackage);
+
+            Assert.AreEqual(1, mangledDecoded.Tokens.Count(tok => tok.IsForceDecode));
         }
     }
 }
