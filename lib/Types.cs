@@ -37,11 +37,11 @@ namespace Microsoft.MT.TextSegmentation.SpanFinder
     {
         PhraseFix
     }
-    //public enum AnnotatedSpanInstructions
-    //{
-    //    ForceDecodeAs,
-    //    EncodeAsIf
-    //}
+    public enum AnnotatedSpanInstructions  // note: ignored in standalone build
+    {
+        ForceDecodeAs,
+        EncodeAsIf
+    }
     public class AnnotatedSpan
     {
         public int StartIndex { get; private set; } // coordinates into the raw source string
@@ -68,7 +68,7 @@ namespace Microsoft.MT.TextSegmentation.SpanFinder
             int startIndex,
             int length,
             AnnotatedSpanClassType? classType,
-            //AnnotatedSpanInstructions instructions = AnnotatedSpanInstructions.ForceDecodeAs,
+            AnnotatedSpanInstructions instructions = AnnotatedSpanInstructions.ForceDecodeAs,  // note: ignored in standalone build
             string decodeAs = null,
             string encodeAsIf = null)
         {
