@@ -217,7 +217,7 @@
             // if there are phrasefix tokens in the source but not the target, they should be added back in heuristically.
             foreach (var fsm in ModelsToTest(includeInlineFixes: false))
             {
-                var encodedWithPF = fsm.Encode("A test.", new List<AnnotatedSpan> { new AnnotatedSpan(2, 4, AnnotatedSpanClassType.PhraseFix, /*AnnotatedSpanInstructions.ForceDecodeAs,*/ "fix") });
+                var encodedWithPF = fsm.Encode("A test.", new List<AnnotatedSpan> { new AnnotatedSpan(2, 4, AnnotatedSpanClassType.PhraseFix, AnnotatedSpanInstructions.ForceDecodeAs, "fix") });
                 var encodedNoPF = fsm.Encode("A test.");
 
                 // if there are no phrasefixes in the source, none will need to be added to the target.
@@ -243,7 +243,7 @@
                                                          rightWordGlue: true);
 
             // {▁A|scu|wb|we ▁{word}|cn|wb|we|classphrasefix <9> <#> .|gl+|gr-}
-            var encodedWithPFSerialized = serializeIndicesFsm.Encode("A test.", new List<AnnotatedSpan> { new AnnotatedSpan(2, 4, AnnotatedSpanClassType.PhraseFix, /*AnnotatedSpanInstructions.ForceDecodeAs,*/ "fix") });
+            var encodedWithPFSerialized = serializeIndicesFsm.Encode("A test.", new List<AnnotatedSpan> { new AnnotatedSpan(2, 4, AnnotatedSpanClassType.PhraseFix, AnnotatedSpanInstructions.ForceDecodeAs, "fix") });
 
             // Reusing the encoded string as decoded, but stripping the digit tokens will produce a phrasefix token with
             // null index factor. 
