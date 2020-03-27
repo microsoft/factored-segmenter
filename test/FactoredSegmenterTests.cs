@@ -50,6 +50,8 @@
                 // @TODO: handle weird cases [Arul]
                 //  - In Hindi people often use the colon char (incorrectly) instead of the very similar looking diacritic. Ideally we should not break it from the words,
                 //  - Similarly in Hebrew they often use the " double quote instead of the very similar looking letter
+                Assert.IsFalse(fsm.Test("They sent a tax to Ayodhya because we had defeated them in that famous 'Ashomedha' to rend it.", annotatedSpans: new List<AnnotatedSpan> {
+                        new AnnotatedSpan(12, 14, AnnotatedSpanClassType.PhraseFix, decodeAs: "First Class"), new AnnotatedSpan(27, 7, AnnotatedSpanClassType.PhraseFix, decodeAs: "Economy Class") }));  // class encoding
                 Assert.IsTrue(fsm.Test("-<<<>>>{{{}}}", numSegmentsBeforeSPM: 9));  // < and { used in special tokens must be single-char tokens if in prefix position
                 Assert.AreEqual(fsm.Decode(fsm.Encode("\u2581\u2581\u2581\u2581\u2581\u2581\u2581").ToString()).ToString(), "_______"); // SentencePiece space marker \u2581. Currently, this one case does NOT round-trip (but it trips up SentencePiece)
                 Assert.IsFalse(fsm.Test("Tag <b>bold</b> yeah<br>! W<b>o</b>rd <br> here.", annotatedSpans: new List<AnnotatedSpan> {

@@ -1005,7 +1005,12 @@ namespace Microsoft.MT.Common.Tokenization
             // depends on options. Instead, we determine factors by selecting one representative word per class,
             // encoding it, and using the resulting factor set.
             Factors GetFactorsFromExample(string s)
-                => (fsm.EncodeWithLogging(s) as Encoded).encodedTokens.First().factors; // get factors from first token (in case the example gets split)
+            {
+                IEnumerable<Token> tokens = new Token[]{ new Token(s) };  // create token in same form as Pretokenize() would
+                tokens = fsm.Factorize(tokens);  // determine factors
+                Sanity.Requires(tokens.Count() == 1, "GetFactorsFromExample unexpectedly got an example that was split by Factorize??");
+                return tokens.First().factors;   // get factors from the token
+            }
 
             // determine the set of lemmas and their observed factor types
             var factorTypeMap = new Dictionary<string, FactorType[]>(); // [lemma] -> set of factor types
@@ -1070,7 +1075,7 @@ namespace Microsoft.MT.Common.Tokenization
                 // lemmas for various classes of unencodable characters
                 // These are examples of different character classes, that have different factor sets.
                 // E.g. the Davanagaari character has no capitalization, while the Chinese character has
-                // different boundary factors. The code below runs Encode() over each character and
+                // different boundary factors. The code below runs Factorize() over each character and
                 // reads out the factor set. Note that the factor set also depends on configuration options.
                 foreach (var ch in "a0.त超ⓐ☺") // one example for each class
                 {
@@ -1413,6 +1418,9 @@ namespace Microsoft.MT.Common.Tokenization
         //  - breaking at unambiguous word boundaries (that can be decided without a model)
         //  - break at FactoredSegmenter boundaries (e.g. split numerals into digits, split mixed-case words)
         // This is a separate function because these steps also need to be executed during SentencePiece training.
+        // This function does NOT set any factors except factors for annotated classes (index or inline).
+        // This function does NOT change the string except for AnnotatedSpan replacements.
+        // ...and a hard-coded pre-replacement of \u2581 which we currently can't handle otherwise. Needs to be fixed.
         private (IEnumerable<Token> Tokens, Dictionary<int, string> DecodeAsTable, Token wholeLineToken)
             Pretokenize(ref string line, List<AnnotatedSpan> annotatedSpans = null, int? seed = null)
         {
@@ -1498,9 +1506,11 @@ namespace Microsoft.MT.Common.Tokenization
             //    (and associated source substrings) alone, we cannot yet distinguish the same
             //    character sequence used both word-initially and word-internally.
             //  - mark such tokens in the serialized form, also by prepending a _
-            //    Now we can also distinguish them in FactoredSegmenter.)
-            // Note that the Token string itself is never modified, and continues to reference the
-            // original source string (if not otherwise mapped). The changes are applied on-the-fly as needed.
+            //    Now we can also distinguish them in FactoredSegmenter.
+            // This function determines whether a _ should be prepended. It returns a
+            // sequence of tuples (original token, flag whether to prepend _).
+            // The returned tokens are not modified, the caller is meant to apply the _ changes
+            // on-the-fly as needed according to the returned flags.
             if (model.ModelOptions.DistinguishInitialAndInternalPieces)
             {
                 var tokenArray = tokens.ToArray();
@@ -1513,7 +1523,7 @@ namespace Microsoft.MT.Common.Tokenization
                     if (model.ModelOptions.InlineFixes && tokenArray[i].factors.inlineFix == Factors.INLINE_FIX_WITH) // skip over inserted source/targets
                         while (iPrev >= 0 && tokenArray[iPrev].factors.inlineFix == Factors.INLINE_FIX_WHAT)
                             iPrev--;
-                    bool prevIsWord = iPrev >= 0 && tokenArray[iPrev].IsOfWordNature;
+                    bool prevIsWord         = iPrev >= 0 && tokenArray[iPrev].IsOfWordNature;
                     bool thisIsWord         =               tokenArray[i].IsOfWordNature;
                     bool isContinuousScript = thisIsWord && tokenArray[i].IsContinuousScript;
                     bool isWordBeg = thisIsWord && !prevIsWord; // same condition as in Factorize()
@@ -2044,10 +2054,10 @@ namespace Microsoft.MT.Common.Tokenization
             Dictionary<string, string> sourceSentenceAnnotations = null,
             int? seed = null)
         {
+            // - break string into tokens according to FS rules
+            //    - does not add factors except for annotated classes
+            //    - does not change the string except for AnnotatedSpans replacements
             var (tokens, decodeAsTable, wholeLineToken) = Pretokenize(ref line, annotatedSpans, seed);
-
-            // @BUGBUG: Capitalization factors should be attached here and meaningfully carried across SPM.
-            // E.g. ABC -> A B C should keep all-caps for all three. Note that this could be part of ABCDef
 
             // - SentencePiece tokenization of lower-case FS tokens
             //    - except for single-char strings, which include space and the accidental ctrl char
@@ -2060,14 +2070,15 @@ namespace Microsoft.MT.Common.Tokenization
                          let lemmaWordBegPrefix = tf.lemmaWordBegPrefix
                          from splitToken in token.SplitToken(spmCoder.Split(token.SubStringNormalizedForSPM(lemmaWordBegPrefix), adjustForWordBegPrefix: lemmaWordBegPrefix))
                          select splitToken;
-            else if (model.ModelOptions.DistinguishInitialAndInternalPieces)
-                tokens = from tf in TokensWithLemmaWordBegPrefix(tokens)
-                         select tf.token;
 
             // - apply FactoredSegmenter transformations
             //    - further splitting
             //    - collapse spacing information in punctuation and word-boundary info
             tokens = Factorize(tokens);
+
+            // At this point, the tokens have been split and annotated with factors. The main work is done.
+            // After this point, the token sequence undergoes further transformations
+            // that are encoding-related.
 
             // some sanity checks
             foreach (var token in tokens)

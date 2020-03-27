@@ -21,8 +21,8 @@ namespace factored_segmenter
         {
             var (GetAndConsumeArg, GetArg) = IterateArgs(args);
             var action = GetAndConsumeArg();
-            if (action != "train" && action != "encode" && action != "decode")
-                BadArgument("The first argument must be 'train', 'encode', or 'decode'");
+            if (action != "train" && action != "encode" && action != "decode" && action != "runtests")
+                BadArgument("The first argument must be 'train', 'encode', 'decode', or 'runtests'");
 
             // parse options
             string dataOutPath = "-";
@@ -121,7 +121,7 @@ namespace factored_segmenter
                         Log($"Marian vocabulary file written to {vocabOutputPath}");
                 }
             }
-            else // action == "encode" or "decode"
+            else if (action == "encode" || action == "decode")
             {
                 if (!quiet)
                     Log($"Processing input file(s) {" ".JoinItems(inputPaths)} with model {modelPath} ...");
@@ -180,6 +180,19 @@ namespace factored_segmenter
 
                 outStream.Flush(); // hoping to elicit an exception in case flushing fails
                 outStream.Close();
+            }
+            else if (action == "runtests")
+            {
+                // This is for easier testing when debugging environment does not support tests.
+                // This must be manually maintained.
+                var tests = new TextSegmentation.Segmenter.FactoredSegmenter_GitSubmodule.src.Test.FactoredSegmenterTests();
+                tests.ReversibilityAndBasicBreakingTests();
+                tests.DecodeIntoConsecutiveSegmentsTest();
+                //tests.ReversibilityAndBasicBreakingTestsOnNaughtyData();  // fails in standalone build because data file is our other repo
+                tests.RunTraining();
+                var tests1 = new TextSegmentation.Segmenter.FactoredSegmenter_GitSubmodule.src.Test.FactoredSegmenterScriptHelperTests();
+                tests1.ScriptEdgeCasesTest();
+                tests1.ClassificationEdgeCaseTests();
             }
         }
 
