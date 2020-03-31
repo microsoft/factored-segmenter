@@ -219,7 +219,13 @@ namespace factored_segmenter
                     GetArg: () => b ? e.Current as string : null);
         }
 
-        static DirectoryInfo CreateDirectoryFor(string filePath)
-            => filePath != "-" ? Directory.CreateDirectory(Path.GetDirectoryName(filePath)) : null;
+        static void CreateDirectoryFor(string filePath)
+        {
+            if (filePath == "-")
+                return;
+            var dirName = Path.GetDirectoryName(filePath);
+            if (dirName != "")
+                Directory.CreateDirectory(dirName);
+        }
     }
 }
