@@ -1096,7 +1096,7 @@ namespace Microsoft.MT.Common.Tokenization
             // check for whether Marian would overflow with its 32-bit word-id type
             // WordIndex range is prod_t (1 + number of values for factor type t).
             var marianWordIdRange = (from factorType in allUsedFactorTypes select (long)factorType.Factors.Count() + 1).Aggregate(seed: 1, func: (long x, long y) => x * y);
-            Logger.WriteLine("FactoredSegmenter: Virtual Marian factor vocabulary size is {marianWordIdRange:#,##0}");
+            Logger.WriteLine($"FactoredSegmenter: Virtual Marian factor vocabulary size is {marianWordIdRange:#,##0}");
             Sanity.Requires(marianWordIdRange <= uint.MaxValue, $"Too many factors, virtual index space {marianWordIdRange:#,##0} exceeds the bit limit of Marian's WordIndex type");
             // create the lines of the vocab file
             Logger.WriteLine("FactoredSegmenter: Creating vocab file...");

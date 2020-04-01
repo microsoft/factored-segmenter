@@ -89,10 +89,12 @@ namespace Microsoft.MT.Segmentation
                     }
                 }
                 else // special case: OOV. Break at each character.
-                    for (int j = 0; j < piece.Length; j++)
+                    for (int j = 0; j < piece.Length; /*j += n*/)
                     {
-                        bool skipLow = char.IsHighSurrogate(piece[j]) && j + 2 <= piece.Length;
-                        n += skipLow ? 2 : 1; // length of this piece is 1 Unicode character. Surrogate pairs are 2 characters in C#'s UCS-2 encoding.
+                        // length of this piece is 1 Unicode character. Surrogate pairs are 2 characters in C#'s UCS-2 encoding.
+                        var ucs2Len = (char.IsHighSurrogate(piece[j]) && j + 2 <= piece.Length) ? 2 : 1;
+                        n += ucs2Len;
+                        j += ucs2Len;
                         if (n < segmentMe.Length || res != null)
                         {
                             if (res == null)
