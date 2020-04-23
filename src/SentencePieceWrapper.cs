@@ -1,13 +1,13 @@
-﻿using Common.Collections;
-using Common.Collections.Extensions;
-using Common.Contracts;
-using Common.IO;
-using Common.Utils;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using Common.Collections;
+using Common.Collections.Extensions;
+using Common.Contracts;
+using Common.IO;
+using Common.Utils;
 
 namespace Microsoft.MT.Common.Tokenization
 {
@@ -216,14 +216,13 @@ namespace Microsoft.MT.Common.Tokenization
         /// <param name="cacheSize">Size of cache for calls to Split() (segmentation is very resource intensive)</param>
         public SentencePieceCoder(SentencePieceCoderConfig config)
         {
-            spm = new Segmentation.SentencePieceManaged();
             // Save BLOB to file, since the current SentencePieceManaged wrapper can only load the model from a file,
             // @TODO: The SentencePiece native API also supports reading from a std::istream,
             //        so we should pass the blob via a a simple istream class that reads from memory, cf.
             //        https://stackoverflow.com/questions/2079912/simpler-way-to-create-a-c-memorystream-from-char-size-t-without-copying-t
             var spmTempModelPath = Path.GetTempFileName();
             File.WriteAllBytes(spmTempModelPath, config.SentencePieceModel.Bytes);
-            spm.LoadModel(spmTempModelPath, config.VocabSubset?.ToArray());
+            spm = new Segmentation.SentencePieceManaged(spmTempModelPath, config.VocabSubset?.ToArray());
             File.Delete(spmTempModelPath);
             m_splitCache = new BoundedSizedLockingCache<string, int[]>(config.SplitCacheSize);
         }

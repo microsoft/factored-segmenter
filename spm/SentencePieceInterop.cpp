@@ -28,35 +28,42 @@ class SentencePieceInterop
         throw std::runtime_error(std::string("SentencePiece error ") + what + ": " + err);
     }
 public:
-    SentencePieceInterop(const char* model, size_t modelSize, const char** vocab, size_t vocabSize)
+    SentencePieceInterop(const uint16_t* modelPath, const uint16_t** vocab, size_t vocabSize)
     {
         m_processor.reset(new sentencepiece::SentencePieceProcessor());
         // load the model file
-        const auto status = m_processor->LoadFromSerializedProto(sentencepiece::util::min_string_view(model, modelSize));
+        const auto status = m_processor->Load(utf16_to_utf8(utf16string(modelPath)));
         // implant the restricted vocabulary, if given
         if (vocab && vocabSize > 0)
         {
-            std::vector<std::string> vocab_str(vocabSize);
+            std::vector<std::string> vocab_str;
             for (size_t i = 0; i < vocabSize; i++)
-                vocab_str[i] = vocab[i];
+            {
+                vocab_str.push_back(utf16_to_utf8(utf16string(vocab[i])));
+            }
+
             m_processor->SetVocabulary(vocab_str);
         }
         check_status(status, "loading");
     }
-    size_t EncodeAsIds(const char* wordInUtf8, int* pieceIdBuffer, size_t pieceIdBufferSize)
+
+    int EncodeAsIds(const uint16_t* word, int* pieceIdBuffer, size_t pieceIdBufferSize)
     {
+        std::string wordInUtf8 = utf16_to_utf8(utf16string(word));
         auto piece_ids = m_processor->EncodeAsIds(sentencepiece::util::min_string_view(wordInUtf8));
         if (piece_ids.size() > pieceIdBufferSize)
-            throw std::out_of_range("EncodeAsIds pieceIdBufferSize is too small");
+           return -((int)piece_ids.size());
+            
         std::copy(piece_ids.begin(), piece_ids.end(), pieceIdBuffer);
-        return piece_ids.size();
+        return (int)piece_ids.size();
     }
+
     int UCS2LengthOfPieceId(int pieceId)
     {
         if (m_processor->IsUnknown(pieceId))
             return -1;
         auto utf8 = m_processor->IdToPiece(pieceId);
-        return count_utf8_to_utf16(utf8);
+        return (int)count_utf8_to_utf16(utf8);
     }
 };
 
@@ -70,11 +77,11 @@ public:
 
 extern "C" {
 
-intptr_t LoadModel(const char* model, size_t modelSize, const char** vocab, size_t vocabSize)
+intptr_t __declspec(dllexport) __cdecl  LoadModel(const uint16_t* modelPath, const uint16_t** vocab, size_t vocabSize)
 {
     try
     {
-        return (intptr_t) new SentencePieceInterop(model, modelSize, vocab, vocabSize);
+        return (intptr_t) new SentencePieceInterop(modelPath, vocab, vocabSize);
     }
     catch(...)  // @TODO: how to return meaningful error information?
     {
@@ -82,11 +89,11 @@ intptr_t LoadModel(const char* model, size_t modelSize, const char** vocab, size
     }
 }
 
-int EncodeAsIds(intptr_t object, const char* wordInUtf8, int* pieceIdBuffer, size_t pieceIdBufferSize)
+int __declspec(dllexport) __cdecl  EncodeAsIds(intptr_t object, const uint16_t* word, int* pieceIdBuffer, size_t pieceIdBufferSize)
 {
     try
     {
-        return (int)((SentencePieceInterop*)object)->EncodeAsIds(wordInUtf8, pieceIdBuffer, pieceIdBufferSize);
+        return (int)((SentencePieceInterop*)object)->EncodeAsIds(word, pieceIdBuffer, pieceIdBufferSize);
     }
     catch(...)  // @TODO: how to return meaningful error information?
     {
@@ -94,7 +101,7 @@ int EncodeAsIds(intptr_t object, const char* wordInUtf8, int* pieceIdBuffer, siz
     }
 }
 
-int UCS2LengthOfPieceId(intptr_t object, int pieceId)
+int __declspec(dllexport) __cdecl UCS2LengthOfPieceId(intptr_t object, int pieceId)
 {
     try
     {
@@ -106,7 +113,7 @@ int UCS2LengthOfPieceId(intptr_t object, int pieceId)
     }
 }
 
-void UnloadModel(intptr_t object)
+void __declspec(dllexport) __cdecl UnloadModel(intptr_t object)
 {
     delete (SentencePieceInterop*)object;
 }
@@ -130,13 +137,13 @@ using namespace std;
 const char* spmModelPath = "/home/fseide/factored-segmenter/spm/spm.model";
 const char* spmVocabPath = "/home/fseide/factored-segmenter/spm/spm.vocab";
 
-vector<string> test_strings =
-{
-    "\u2581HELLO",
-    "\u2581OBAMA",
-    "OBAMA",
-    "HELL\u2582\u2582O"  // out-of-vocab example
-};
+//vector<string> test_strings =
+//{
+//    "\u2581HELLO",
+//    "\u2581OBAMA",
+//    "OBAMA",
+//    "HELL\u2582\u2582O"  // out-of-vocab example
+//};
 
 void fail(const char* msg) { cerr << "FAILED: " << msg << endl; exit(1); }
 
@@ -157,23 +164,23 @@ int main()
         getline(f_vocab, line);
         vocab.push_back(line);
     }
-    vector<const char*> vocab_ptr;
-    for (const auto& line : vocab)
-        vocab_ptr.push_back(line.c_str());
+    //vector<const uint16_t*> vocab_ptr;
+    //for (const auto& line : vocab)
+    //    vocab_ptr.push_back(line.c_str());
 
-    auto object = LoadModel(modelBytes.data(), modelBytes.size(), vocab_ptr.data(), vocab_ptr.size());
+    //auto object = LoadModel(spmModelPath, vocab_ptr.data(), vocab_ptr.size());
 
-    for (const auto& test_string : test_strings)
-    {
-        cerr << "Testing: " << test_string << endl;
-        vector<int> piece_ids(test_string.size() + 1);
-        auto num_pieces = EncodeAsIds(object, test_string.c_str(), piece_ids.data(), piece_ids.size());
-        if (num_pieces < 0)
-            fail("Failed to EncodeAsIds.");
-        piece_ids.resize(num_pieces);
-        for (auto piece_id : piece_ids)
-            cerr << " piece id " << piece_id << " has " << UCS2LengthOfPieceId(object, piece_id) << " UCS-2 characters" << endl;
-    }
-    UnloadModel(object);
+    //for (const auto& test_string : test_strings)
+    //{
+    //    cerr << "Testing: " << test_string << endl;
+    //    vector<int> piece_ids(test_string.size() + 1);
+    //    auto num_pieces = EncodeAsIds(object, test_string.c_str(), piece_ids.data(), piece_ids.size());
+    //    if (num_pieces < 0)
+    //        fail("Failed to EncodeAsIds.");
+    //    piece_ids.resize(num_pieces);
+    //    for (auto piece_id : piece_ids)
+    //        cerr << " piece id " << piece_id << " has " << UCS2LengthOfPieceId(object, piece_id) << " UCS-2 characters" << endl;
+    //}
+    //UnloadModel(object);
     cerr << "Done." << endl;
 }
