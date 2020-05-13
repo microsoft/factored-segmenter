@@ -1151,7 +1151,7 @@ namespace Microsoft.MT.Common.Tokenization
 
             // create lemma vocab for detecting unencodable characters
             var lemmaVocab = specialTokens.Concat(lemmaTokens);
-            model.KnownLemmas = lemmaVocab.ToHashSet();
+            model.KnownLemmas = new HashSet<string>(lemmaVocab);
 
             // create shortlist vocab
             // Currently, that is just the lemma vocab, but in serialized (escaped) form.
