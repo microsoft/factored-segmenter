@@ -369,7 +369,7 @@ namespace Microsoft.MT.Common.Tokenization
             }
 
             // Normal word, should rely only on factors to determine capitalization - 
-            // lowercase everythihng first and then change to upper where specified by factors.
+            // lowercase everything first and then change to upper where specified by factors.
             else
             {
                 word = word.ToLowerInvariant();
@@ -783,9 +783,10 @@ namespace Microsoft.MT.Common.Tokenization
 
                 // legacy: older versions do not contain KnownLemmas
                 if (model.KnownLemmas == null || model.KnownLemmas.Count == 0) // (somehow a non-existing XML entry leads to an empty set, not a null??)
-                    model.KnownLemmas = (from lemma in (model.ShortlistVocab ?? FactoredSegmenterCoder.LegacyRecoverLemmaVocabFromFactorSpec(model.FactorSpec))
-                                         select Token.DeserializeLemma(lemma))
-                                        .ToHashSet();
+                    model.KnownLemmas = new HashSet<string>(
+                        (from lemma in (model.ShortlistVocab ?? FactoredSegmenterCoder.LegacyRecoverLemmaVocabFromFactorSpec(model.FactorSpec))
+                         select Token.DeserializeLemma(lemma)));
+                                        
 
                 return model;
             }
