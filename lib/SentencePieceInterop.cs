@@ -1,4 +1,4 @@
-// Wrapper around the SentencePiece runtime library.
+﻿// Wrapper around the SentencePiece runtime library.
 // This is currently emulated by a process-based interface,
 // until a real P/invoke implementation is completed.
 

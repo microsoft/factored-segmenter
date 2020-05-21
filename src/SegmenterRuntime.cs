@@ -283,6 +283,11 @@ namespace Microsoft.MT.Common.Tokenization.Segmenter
         /// we have strict requirements. This flag is used to indicate the same.  if this is set to false (default = true),we cannot log any user strings at runtime.
         /// </summary>
         public bool IsTrainingScenario { get; set; }
+
+        /// <summary>
+        /// Find character spans that are out of vocabulary for the model and cannot be encoded.
+        /// </summary>
+        public abstract IEnumerable<(int StartIndex, int Length)> FindUnrepresentableSpans(string line);
     }
 
     // Unimplemented version, if we wanted to use raw sentence piece instead of Factored segmenter. We'd need to figure out how to handle tags and other spans.
@@ -311,6 +316,11 @@ namespace Microsoft.MT.Common.Tokenization.Segmenter
         public override string[] ShortlistVocab { get { throw new NotImplementedException(); } }
 
         public override string TranscodeTokenToShortlist(string token)
+        {
+            throw new NotImplementedException();
+        }
+
+        public override IEnumerable<(int StartIndex, int Length)> FindUnrepresentableSpans(string line)
         {
             throw new NotImplementedException();
         }
