@@ -1951,13 +1951,16 @@ namespace Microsoft.MT.Common.Tokenization
                     var lemma = tokens[i].Word;
                     if (lemma == Token.UNK_DIGITS_END)
                     {
-                        isValid = true; // successful parse: sequence is valid
+                        isValid = (n < int.MaxValue); // successful parse: sequence is valid (unless too many digits)
                         break;
                     }
                     int d = Array.IndexOf(Token.UNK_DIGITS, lemma); // map lemma string back to digit value
                     if (d == -1)
                         break;      // neither a digit nor the end symbol -> invalid
-                    n = n * 10 + d; // number parsing like it's 1984
+                    if (n < (int.MaxValue - d) / 10)
+                        n = n * 10 + d; // number parsing like it's 1984
+                    else
+                        n = int.MaxValue; // guard against too many digits (e.g. MT fell into repetition)
                 }
 
                 // transaltion may have generated an invalid sequence; the only thing we can do is silently drop the whole thing
