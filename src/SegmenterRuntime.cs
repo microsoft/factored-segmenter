@@ -37,13 +37,19 @@ namespace Microsoft.MT.Common.Tokenization.Segmenter
         public bool IsWordTokenStart, IsWordTokenEnd;
         public bool IsSpacingWordStart, IsSpacingWordEnd;
         public string SurfaceForm => RawSourceText.Substring(StartIndex, Length);
+
+        // is this eligible for alignment links from target tokens? Alignments from Marian to segments for which this is false will be discarded
+        // in Decode. At present, this will be false for sentence annotation tokens, and true for others. 
+        public bool CanBeAlignedTo;
+
         public override bool Equals(object obj)
         {
             return
                 obj is EncodedSegmentReference other &&
                 RawSourceText == other.RawSourceText && StartIndex == other.StartIndex && Length == other.Length &&
                 IsWordTokenStart == other.IsWordTokenStart && IsWordTokenEnd == other.IsWordTokenEnd &&
-                IsSpacingWordStart == other.IsSpacingWordStart && IsSpacingWordEnd == other.IsSpacingWordEnd;
+                IsSpacingWordStart == other.IsSpacingWordStart && IsSpacingWordEnd == other.IsSpacingWordEnd &&
+                CanBeAlignedTo == other.CanBeAlignedTo;
         }
         public override int GetHashCode() { return RawSourceText.GetHashCode(); }
         // for debugging

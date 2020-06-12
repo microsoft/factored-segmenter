@@ -8,6 +8,7 @@
     using System.IO;
     using System.Linq;
     using System.Collections.Generic;
+    using Common.MT.Segments;
 
     /// <summary>
     /// Unit tests.
@@ -30,7 +31,7 @@
                     // uncomment this one to debug an actual SPM model
                     //FactoredSegmenterCoder.CreateForTest(@"\\mt-data-04\humanparity_tier_1\TeacherStage2Systems\enu\kor\2019_04_30_05h_47m_08s_FS_4repl\final\enu.kor.teacher.fsm", serializeIndicesAndUnrepresentables: serializeIndicesAndUnrepresentables),                    
                     FactoredSegmenterCoder.CreateForTest(),
-                    FactoredSegmenterCoder.CreateForTest(sourceSentenceAnnotationTypes: new[]{ "target_language", "politeness" }),
+                    FactoredSegmenterCoder.CreateForTest(sourceSentenceAnnotationTypes: new[] { "target_language", "politeness" }),
                     FactoredSegmenterCoder.CreateForTest(singleLetterCaseFactors: true,
                                                          distinguishInitialAndInternalPieces: true,
                                                          serializeIndicesAndUnrepresentables: true,
@@ -40,6 +41,7 @@
             return models;
 
         }
+
         // check whether encoding is reversible, and whether number of tokens before SPM is right
         // Note that this does not test SentencePiece segmentation, and also does not check against a full ground truth result.
         [TestMethod]
@@ -256,6 +258,64 @@
             var mangledDecoded = serializeIndicesFsm.Decode(mangledDecodedTokenStrings, emptyAlignment, encodedWithPFSerialized.DecoderPackage);
 
             Assert.AreEqual(1, mangledDecoded.Tokens.Count(tok => tok.IsForceDecode));
+        }
+
+        /// <summary>
+        /// Test interactions between sentence annotations and alignment and tags.
+        /// Alignments to sentence annotation tokens should be thrown out.
+        /// </summary>
+        [TestMethod]
+        public void SentenceAnnotationTagAndAlignmentTest()
+        {
+            var sentenceAnnotationFsm = FactoredSegmenterCoder.CreateForTest(sourceSentenceAnnotationTypes: new[] { "target_language", "politeness" });
+
+            var sourceSentence = "<a0>A Test</a0>";
+            var annotatedSpans = new List<AnnotatedSpan> // tags
+            {
+                new AnnotatedSpan(0, 4, classType: null, instructions: AnnotatedSpanInstructions.EncodeAsIf, encodeAsIf: ""),
+                new AnnotatedSpan(10, 5, classType: null, instructions: AnnotatedSpanInstructions.EncodeAsIf, encodeAsIf: ""),
+            };
+
+            var sentenceAnnotations = new Dictionary<string, string>();
+            sentenceAnnotations["target_language"] = "ESN";
+            sentenceAnnotations["politeness"] = "false";
+
+            var encodedSource = sentenceAnnotationFsm.Encode(sourceSentence, annotatedSpans, sourceSentenceAnnotations: sentenceAnnotations);
+
+            Assert.AreEqual(4, encodedSource.OriginalSourceTextSegments.Length, $"Expected 4 encodedSourceSegments but found {encodedSource.OriginalSourceTextSegments.Length}");
+            
+            for (int i = 0; i < 2; ++i)
+                Assert.IsFalse(encodedSource.OriginalSourceTextSegments[i].CanBeAlignedTo, $"source segment {i} is a sentenceAnnotationToken and should have CanBeAlignedTo = false");
+            
+            for (int i = 2; i < encodedSource.OriginalSourceTextSegments.Length; ++i)
+                Assert.IsTrue(encodedSource.OriginalSourceTextSegments[i].CanBeAlignedTo, $"source segment {i} is a sentenceAnnotationToken and should have CanBeAlignedTo = true");
+
+            Assert.AreEqual("A", encodedSource.OriginalSourceTextSegments[2].SurfaceForm);
+            Assert.AreEqual("Test", encodedSource.OriginalSourceTextSegments[3].SurfaceForm);
+
+
+            var targetSentence = "C'est vrai";
+            var encodedTarget = sentenceAnnotationFsm.Encode(targetSentence);
+
+            var alignmentFromMT = Alignment.FromLinks(
+                new AlignmentLink[]
+                {
+                    new AlignmentLink(0, 1), // connects "'" to first sentence annotation    - throw out
+                    new AlignmentLink(1, 2), // connects "est" to second sentence annotation - throw out
+                    new AlignmentLink(2, 2), // connects "est" to "A"     - keep
+                    new AlignmentLink(2, 0), // connects "C" to "A"       - keep
+                    new AlignmentLink(3, 3)  // connnecs "vrai" to "Test" - keep
+               });
+
+            var decoded = sentenceAnnotationFsm.Decode(encodedTarget.TokenStrings, alignmentFromMT, encodedSource.DecoderPackage);
+            bool AlignsToSentenceAnnotation(DecodedSegment decodedSegment) => 
+                decodedSegment.SourceAlignment != null && 
+                decodedSegment.SourceAlignment.Any(src => src.SourceSegment == encodedSource.OriginalSourceTextSegments[0] || src.SourceSegment == encodedSource.OriginalSourceTextSegments[1]);
+
+            Assert.IsFalse(decoded.Tokens.Any(tok => AlignsToSentenceAnnotation(tok)), "No target segments should align to the sentence annotation segments in the source");
+
+            int alignmentLinkCount = decoded.Tokens.Where(decTok => decTok.SourceAlignment != null).SelectMany(decTok => decTok.SourceAlignment).Count();
+            Assert.AreEqual(3, alignmentLinkCount, $"Expected 3 alignment links from decoded tokens, but found {alignmentLinkCount}");
         }
     }
 }

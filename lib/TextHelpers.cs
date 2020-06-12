@@ -222,19 +222,5 @@ namespace Common.Text
                 for (int i = range.min; i <= range.max; i++)
                     s_ScriptByChar[i] = range.script;
         }
-
-        /// <summary>
-        /// Enumerate all utf32 codepoints in a string and convert them to strings
-        /// </summary>
-        public static IEnumerable<string> EnumerateUtf32CodePointsAsStrings(string input)
-        {
-            int i = 0;
-            while (i < input.Length)
-            {
-                int length = char.IsSurrogatePair(input, i) ? 2 : 1;
-                yield return input.Substring(i, length);
-                i += length;
-            }
-        }
     }
 }

@@ -284,7 +284,9 @@ namespace Microsoft.MT.Common.Tokenization
         private int origStartIndex, origLength; // character range into original string
         private string line;                    // underlying string
         private int startIndex, length;         // character range into underlying string
+        private bool canBeAlignedTo;            // is this eligible for alignments in the result? alignments to unalignable tokens from the MT model will be deleted.
         public Factors factors;                 // [first char of factor name] -> factor name
+        
 
         // create a new Token from an entire line
         public Token(string line, Factors factors = new Factors(), bool lemmaWordBegPrefix = false)
@@ -296,6 +298,7 @@ namespace Microsoft.MT.Common.Tokenization
             this.startIndex = 0;
             this.length = line.Length;
             this.factors = factors;
+            this.canBeAlignedTo = true;
         }
 
         // create a new Token by replacing the underlying string
@@ -307,6 +310,15 @@ namespace Microsoft.MT.Common.Tokenization
             token.startIndex = 0;
             token.length = newLine.Length;
             //Sanity.Requires(!lemmaWordBegPrefix, "lemmaWordBegPrefix should not have been set at this point"); // now it can, as we use this function in serialization of indices and unrepresentables
+            return token;
+        }
+
+        // create a new token that is a copy, but has canBeAlignedTo set to the specified value
+        // Sentence annotation tokens use this to set canBeAlignedTo to false.
+        public Token WithCanBeAlignedTo(bool canBeAlignedTo)
+        {
+            var token = this;
+            token.canBeAlignedTo = canBeAlignedTo;
             return token;
         }
 
@@ -350,6 +362,7 @@ namespace Microsoft.MT.Common.Tokenization
         public string OrigString => origLine.Substring(origStartIndex, origLength);
         public char First() => line[startIndex]; // note: caller must ensure length > 0
         public char At(int i) => line[startIndex + i]; // note: caller must ensure i < length
+        public bool CanBeAlignedTo => canBeAlignedTo;
 
         // conversions to output representations
         public string SurfaceForm(Dictionary<int, string> decodeAsTable = null) // convert token into the display form (used in Decode()), i.e. apply capitalization factor
@@ -1607,36 +1620,23 @@ namespace Microsoft.MT.Common.Tokenization
                 Sanity.Requires(encodedTokens.All(t => t.OrigLineIs(s)),
                                 "Encoded() requires that all tokens refer to the original input string" );
 
-                //@TODO: this monstrosity is a result of refactoring; should be simplified
-                var encodedTokensSelfLinks = // fake links that link each token to its own source range
-                    encodedTokens.Select((token, index) =>
-                                         new List<DecodedSegment.SourceLink> { new DecodedSegment.SourceLink
-                                         {
-                                             SourceSegment = new EncodedSegmentReference
-                                             {
-                                                 RawSourceText = OriginalSourceText,
-                                                 StartIndex = token.OrigRange.StartIndex, // token aligns to itself in Encode()
-                                                 Length = token.OrigRange.Length,
-                                                 IsWordTokenStart = false, // (not used by DecodeIntoConsecutiveSegments())
-                                                 IsWordTokenEnd = false,
-                                                 IsSpacingWordStart = false,
-                                                 IsSpacingWordEnd = false
-                                             },
-                                             Confidence = 1  // @TODO: is this a probability?
-                                         }});
+                var sourceDecodedSegments = DecodeIntoConsecutiveSegments(encodedTokens, tokenSourceAlignmentLinks: null, decodeAsTable: null, includeSpaceSegments: false);
+                Sanity.Requires(sourceDecodedSegments.Length == encodedTokens.Length, "Result of DecodeIntoConsecutiveSegments on source must produce the same number of segments as tokens passed in");
+
                 OriginalSourceTextSegments =
-                    (from seg in DecodeIntoConsecutiveSegments(encodedTokens, encodedTokensSelfLinks.ToArray(), decodeAsTable: null)
-                     where seg.SourceAlignment != null // this removes exactly the tokens that DecodeIntoConsecutiveSegments() inserted
+                    (from i in Enumerable.Range(0, encodedTokens.Length)
                      select new EncodedSegmentReference
                      {
-                         RawSourceText = seg.SourceAlignment.First().SourceSegment.RawSourceText,
-                         StartIndex = seg.SourceAlignment.First().SourceSegment.StartIndex, // token aligns to itself in Encode()
-                         Length = seg.SourceAlignment.First().SourceSegment.Length,
-                         IsWordTokenStart = seg.IsWordTokenStart, // this was determined by DecodeIntoConsecutiveSegments()
-                         IsWordTokenEnd = seg.IsWordTokenEnd,
-                         IsSpacingWordStart = seg.IsSpacingWordStart,
-                         IsSpacingWordEnd = seg.IsSpacingWordEnd
+                         RawSourceText      = OriginalSourceText,
+                         StartIndex         = encodedTokens[i].OrigRange.StartIndex, 
+                         Length             = encodedTokens[i].OrigRange.Length,
+                         IsWordTokenStart   = sourceDecodedSegments[i].IsWordTokenStart, // this was determined by DecodeIntoConsecutiveSegments()
+                         IsWordTokenEnd     = sourceDecodedSegments[i].IsWordTokenEnd,
+                         IsSpacingWordStart = sourceDecodedSegments[i].IsSpacingWordStart,
+                         IsSpacingWordEnd   = sourceDecodedSegments[i].IsSpacingWordEnd,
+                         CanBeAlignedTo     = encodedTokens[i].CanBeAlignedTo
                      }).ToArray();
+
                 Sanity.Requires(encodedTokens.Length == OriginalSourceTextSegments.Length, "Spaces somehow not correctly added and removed again??");
                 // check rough left-to-right property
                 // This check is an attempt to codify what is presently true about the ordering,
@@ -2119,7 +2119,8 @@ namespace Microsoft.MT.Common.Tokenization
                 var annotationTokens = from type in model.ModelOptions.SourceSentenceAnnotationTypeList
                                        let value = sourceSentenceAnnotations[type]
                                        let tokenString = ToSentenceAnnotationTokenString(type, value)
-                                       select wholeLineToken.Narrow(0, 0).OverrideAsIf(tokenString); // align with the entire sentence
+                                       select wholeLineToken.Narrow(0, 0).OverrideAsIf(tokenString)  // The sentence annotation token should map to a 0-length range at beginning of sentence.
+                                             .WithCanBeAlignedTo(false);                             // This indicates that any alignments the model returns to this token should be discarded.
                 Sanity.Requires(sourceSentenceAnnotations.Keys.Count() == annotationTokens.Count(), $"Sentence annotation must contain exactly one entry for each type in mode option SourceSentenceAnnotationTypes");
                 tokens = annotationTokens.Concat(tokens);
             }
@@ -2419,6 +2420,11 @@ namespace Microsoft.MT.Common.Tokenization
                     int t = alignmentLink.TargetIndex;
                     Sanity.Requires(s >= 0 && s < originalSourceTextSegments.Length, $"Alignment link source index {s} is out of bounds");
                     Sanity.Requires(t >= 0 && t < tokens.Count,          $"Alignment link target index {t} is out of bounds");
+
+                    // throw out alignments to unalignable tokens. Currently that is sentence annotations
+                    if (!originalSourceTextSegments[s].CanBeAlignedTo)
+                        continue;
+
                     if (tokenSourceAlignmentLinks[t] == null) // (List is lazy; null means no source links)
                         tokenSourceAlignmentLinks[t] = new List<DecodedSegment.SourceLink>();
                     // remember link for target position t into source position s, expressed as source character range
@@ -2453,7 +2459,8 @@ namespace Microsoft.MT.Common.Tokenization
             // decode the tokens into surface forms with source-alignment info
             return new Decoded(DecodeIntoConsecutiveSegments(tokens.ToArray(),
                                tokenSourceAlignmentLinks,
-                               decoderPackage?.DecodeAsTable));
+                               decoderPackage?.DecodeAsTable,
+                               includeSpaceSegments: true));
         }
 
         // Helper to create surface-form segments with word-boundary information, as well as space tokens, from factored tokens.
@@ -2462,9 +2469,15 @@ namespace Microsoft.MT.Common.Tokenization
         //  - space is inserted as additional tokens
         // The number of output items is *not* the same as tokens.Length due to the added spaces.
         // Which is fine because the caller should not be concerned with the internal token structure.
+        //
+        // NOTE: despite Decode in the name, this function is also used during encoding as an intermediate
+        // step in producing EncodedSegmentReferences (which act as anchors for alignment links from Marian).
+        // In this case includeSpaceSegments is false, and the function is guaranteed to produce exactly one
+        // DecodedSegment for each token in Tokens (there will be no inferred space segments).
         internal static DecodedSegment[] DecodeIntoConsecutiveSegments(IList<Token> tokens,
                                                                        IList<List<DecodedSegment.SourceLink>> tokenSourceAlignmentLinks,
-                                                                       Dictionary<int, string> decodeAsTable)
+                                                                       Dictionary<int, string> decodeAsTable,
+                                                                       bool includeSpaceSegments)
         {
             // we form an extended version of the input which has spaces inserted, based on glue factors
             var segments      = new List<string>();                          // decoded surface-form segments
@@ -2490,7 +2503,7 @@ namespace Microsoft.MT.Common.Tokenization
                 var notAWord = token.factors.glueRight != null || token.factors.glueLeft != null; // 'word' here means follows word or CS spacing rules
                 var isContinuousScript = token.factors.csBeg == Factors.CS_BEG || token.factors.csBeg == Factors.CS_BEG_NOT;
                 var insertSpaceBefore = !prevHadGlueRight && !hasGlueLeft;
-                if (insertSpaceBefore)
+                if (insertSpaceBefore && includeSpaceSegments)
                 {
                     segments.Add(" ");
                     isForceDecode.Add(false);
@@ -2546,9 +2559,20 @@ namespace Microsoft.MT.Common.Tokenization
             if (model.KnownLemmas == null)
                 yield break;
 
-            // For efficiency, first check if there are any characters or surrogate pairs) in the input that don't have lemmas. 
+            IEnumerable<string> EnumerateUtf32CodePointsAsStrings(string input)
+            {
+                int i = 0;
+                while (i < input.Length)
+                {
+                    int length = char.IsSurrogatePair(input, i) ? 2 : 1;
+                    yield return input.Substring(i, length);
+                    i += length;
+                }
+            }
+
+            // For efficiency, first check if there are any characters or surrogate pairs in the input that don't have lemmas. 
             // if there are none, we are guaranteed to be able to encode the entire sentence, so no need for the more expensive check below.
-            if (Unicode.EnumerateUtf32CodePointsAsStrings(line)
+            if (EnumerateUtf32CodePointsAsStrings(line)
                        .All(utf32Char => string.IsNullOrWhiteSpace(utf32Char) ||
                                          model.KnownLemmas.Contains((new Token(utf32Char)).SubStringNormalizedForLemma(model.ModelOptions))))
             {
