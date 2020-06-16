@@ -15,7 +15,7 @@ https://dotnet.microsoft.com/download/dotnet-core/thank-you/sdk-3.1.101-windows-
 
 # Linux:
 cd REPO/src
-dotnet publish -c Release -r linux-x64 -f netcoreapp3.1 /p:PublishSingleFile=true /p:PublishTrimmed=true
+dotnet publish -c Release -r linux-x64 -f netcoreapp3.1 /p:PublishSingleFile=true /p:PublishTrimmed=true ../factored-segmenter.csproj
 # now you can run the binary at REPO/src/bin/Release/netcoreapp3.1/linux-x64/publish/factored-segmenter
 
 # Windows:

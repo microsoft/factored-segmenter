@@ -181,19 +181,20 @@ namespace factored_segmenter
                 outStream.Flush(); // hoping to elicit an exception in case flushing fails
                 outStream.Close();
             }
-            else if (action == "runtests")
-            {
-                // This is for easier testing when debugging environment does not support tests.
-                // This must be manually maintained.
-                var tests = new TextSegmentation.Segmenter.FactoredSegmenter_GitSubmodule.src.Test.FactoredSegmenterTests();
-                tests.ReversibilityAndBasicBreakingTests();
-                tests.DecodeIntoConsecutiveSegmentsTest();
-                //tests.ReversibilityAndBasicBreakingTestsOnNaughtyData();  // fails in standalone build because data file is our other repo
-                tests.RunTraining();
-                var tests1 = new TextSegmentation.Segmenter.FactoredSegmenter_GitSubmodule.src.Test.FactoredSegmenterScriptHelperTests();
-                tests1.ScriptEdgeCasesTest();
-                tests1.ClassificationEdgeCaseTests();
-            }
+            // @TODO: disabled for now since the tests don't build under Linux
+            //else if (action == "runtests")
+            //{
+            //    // This is for easier testing when debugging environment does not support tests.
+            //    // This must be manually maintained.
+            //    var tests = new TextSegmentation.Segmenter.FactoredSegmenter_GitSubmodule.src.Test.FactoredSegmenterTests();
+            //    tests.ReversibilityAndBasicBreakingTests();
+            //    tests.DecodeIntoConsecutiveSegmentsTest();
+            //    //tests.ReversibilityAndBasicBreakingTestsOnNaughtyData();  // fails in standalone build because data file is our other repo
+            //    tests.RunTraining();
+            //    var tests1 = new TextSegmentation.Segmenter.FactoredSegmenter_GitSubmodule.src.Test.FactoredSegmenterScriptHelperTests();
+            //    tests1.ScriptEdgeCasesTest();
+            //    tests1.ClassificationEdgeCaseTests();
+            //}
         }
 
         static void Log(string what) => Logger.WriteLine(string.Format("{0:yyyy/MM/dd HH:mm:ss.fff} factored-segmenter: ", DateTime.Now) + what);

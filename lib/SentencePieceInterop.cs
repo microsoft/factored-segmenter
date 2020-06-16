@@ -28,13 +28,26 @@ namespace Microsoft.MT.Segmentation
         readonly string m_tempModelPath;
         readonly string m_tempVocabPath;
         readonly ConcurrentQueue<ProcessPipe> m_serverPool;
-        public SentencePieceManaged()
+        public SentencePieceManaged(string loadMe, string[] vocabulary)
         {
-            m_vocabulary = null;
             m_tempModelPath = Path.GetTempFileName();
             m_tempVocabPath = Path.GetTempFileName();
             m_serverPool = new ConcurrentQueue<ProcessPipe>(); // pool of SPM helper processes. We need multiple if running multi-threaded.
+            m_vocabulary = vocabulary?.ToHashSet();
+            // save to file during the lifetime of this object
+            File.WriteAllBytes(m_tempModelPath, File.ReadAllBytes(loadMe));
+            if (vocabulary != null)
+                File.WriteAllLines(m_tempVocabPath, vocabulary, encoding: new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
         }
+
+        // @TODO: get destruction right, delete the temp files
+        //public sealed override void Dispose()
+        //{
+        //    //Dispose(true);
+        //    GC.SuppressFinalize(this);
+        //}
+        //[HandleProcessCorruptedStateExceptions]
+        //protected virtual void Dispose(bool A_0) { }
 
         // This is the only interface into SPM used by FactoredSegmenter.
         // It determines the split points where SPM would split.
@@ -106,24 +119,9 @@ namespace Microsoft.MT.Segmentation
             }
             return res?.ToArray();
         }
-        public void LoadModel(string loadMe, string[] vocabulary)
-        {
-            m_vocabulary = vocabulary?.ToHashSet();
-            // save to file during the lifetime of this object
-            File.WriteAllBytes(m_tempModelPath, File.ReadAllBytes(loadMe));
-            if (vocabulary != null)
-                File.WriteAllLines(m_tempVocabPath, vocabulary, encoding: new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
-        }
         public string[] Segment(string segmentMe) { throw new NotImplementedException("Segment() not implemented in this build."); }
         public string Unsegment(string[] unsegmentMe) { throw new NotImplementedException("Unsegment() not implemented in this build."); }
 
         //public static bool IsHighSurrogate(char c) { return true; }
-        //public sealed override void Dispose()
-        //{
-        //    //Dispose(true);
-        //    GC.SuppressFinalize(this);
-        //}
-        //[HandleProcessCorruptedStateExceptions]
-        //protected virtual void Dispose(bool A_0) { }
     }
 }
