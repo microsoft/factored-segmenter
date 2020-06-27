@@ -1,10 +1,27 @@
 # FactoredSegmenter
 
-FactoredSegmenter refers to both a segmentation library and an encoding of text that aims at factoring shared properties of words, such as casing or spacing.
+FactoredSegmenter is the unsupervised text tokenizer for machine translation that underlies Microsoft Translator.
+The term "FactoredSegmenter" refers to both a segmentation library and an encoding of text that aims at _factoring shared properties of words_, such as casing or spacing.
 
-For example, whether the word "hydroxychloroquine" occurs at the beginning of the word (where it would normally be capitalized) or within the sentence, or whether it appears after a quotation mark (where it is lower-case but there is no space before it) or not, it is still the same word, and it seems desirable to share parameters across all four cases. The well-known SentencePiece encoding would not share parameters between these four cases. Further, since this is a reasonably rare word, it may not have been seen after a quotation mark frequently enough to get its own token. Hence, in that situation it would be segmented differently from the other three cases.
+FactoredSegmenter segments words into subwords using the popular [SentencePiece](https://github.com/google/sentencepiece) library under the hood.
+However, unlike SentencePiece in its common usage, spaces and capitalization are not encoded in the sub-word tokens themselves.
+Instead, they are encoded in _factors_ that are attached to each token.
+This allows to share model parameters across occurences of the same word in the middle of a sentence, capitalized at the start of a sentence, at the start of a sentence enclosed in parentheses or quotation marks, or in all-caps in a social-media rant.
+In SentencePiece, these are all distinct tokens, which is less robust. For example, this distinction leads to poor translation accuracy for all-caps sentences.
 
-FactoredSegmenter represents each (sub)word as a tuple. For example, "hydroxychloroquine" at sentence start would be represented by a tuple
+FactoredSegmenter complements the [Marian Neural Machine Translation Toolkit](https://github.com/marian-nmt/marian), which has native support for factored modeling, and directly understands the FactoredSegmenter text encoding.
+
+FactoredSegmenter supports so-called "phrase fixing," where specific phrases are required to be translated in a very specific way. This is supported by either allowing to replace such phrases by a fixed token (where a factor is used to distinguish multiple such phrase fixes in a single sentence), or by allowing to insert the desired target translation already in the source, where factors are used to distinguish the source from the target translation.
+
+In addition to factors, FactoredSegmenter treats numerals specially: In FactoredSegmenter, each digit is always its own token, in every writing system. We have observed that this reliably fixes a large class of translation errors for numerals, especially when translating between different numeric systems (such as Arabic numbers to Chinese).
+
+Lastly, FactoredSegmenter provides a mechanism to handle unknown characters, such as rare graphical characters, by encoding them by their Unicode character code in a form that a translation system can learn to copy through.
+
+## Why Factors?
+
+Consider the word "hydroxychloroquine." Whether it occurs at the beginning of the word (where it would normally be capitalized) or within the sentence, or whether it appears after a quotation mark (where it is lower-case but there is no space before it) or not, it is still the same word, and it seems desirable to share parameters across all four cases. For example, since "hydroxychloroquine" is a reasonably rare word, it may not have been seen after a quotation mark frequently enough to get its own token. Hence, in that situation it would not only not share its embedding, but it also may be segmented differently from the other cases.
+
+FactoredSegmenter attempts to remedy this problem by representing each (sub)word as a tuple. For example, "hydroxychloroquine" at sentence start would be represented by a tuple
 ```
 {
     lemma = "hydroxychloroquine",
@@ -23,7 +40,7 @@ When written to a text file, factor tuples are represented by concatenating the 
 ```
 HYDROXYCHLORIQUINE|ci|wb|we
 ```
-Factored Segmenter also supports subword units. A subword unit is used when a word is unseen in the training, or not seen often enough. Factored Segmenter relies on the [SentencePiece](https://github.com/google/sentencepiece) library for determining suitable subword units.
+For rare words or morphological variant, FactoredSegmenter also supports subword units. A subword unit is used when a word is unseen in the training, or not seen often enough. FactoredSegmenter relies on the SentencePiece library for determining suitable subword units.
 
 For example, the "hydroxychloroquine" might be rare enough to be represented by subwords, such as "hydro" + "xy" + "chloroquine", it would be represented as a sequence of four tuples:
 ```
@@ -56,7 +73,7 @@ HYDRO|ci|wb|wen XY|cn|wbn|wen CHLOROQUINE|cn|wbn|we WORKS|cn|wb|we
 ```
 without explicit factors for spaces; rather, the space between "hydroxychloroquine" and "works" is implied by the word-boundary factors.
 
-Hence, words do not carry factors determining space. Instead, such factors are carried by punctuation marks. Specifically, by default there is always a space between word tokens, and punctuation carries factors stating whether a space surrounding the punctuation should be elided, whether the punctuation should be "glued" to the surrounding token(s). For example, in the sentence "Hydroxychloroquine works!", the exclamation point is glued to the word to the left, and would be represented by the following factor tuple:
+Hence, words do not carry factors determining space directly. Rather, such factors are carried by punctuation marks. By default, there is always a space between word tokens, and punctuation carries factors stating whether a space surrounding the punctuation should be elided, whether the punctuation should be "glued" to the surrounding token(s). For example, in the sentence "Hydroxychloroquine works!", the exclamation point is glued to the word to the left, and would be represented by the following factor tuple:
 ```
 {
     lemma = "!",
@@ -70,21 +87,21 @@ HYDRO|ci|wb|wen XY|cn|wbn|wen CHLOROQUINE|cn|wbn|we WORKS|cn|wb|we !|gl+|gr-
 ```
 Note that the short-hands for boolean-like factors are a little inconsistent for historical reasons. Note also that this documentation makes no claims regarding the veracity of its example sentences.
 
-An important property of the factor representation is that it allows to fully reconstruct the original input text, it is fully _round-trippable_. If we encode a text as factor tuples, and then decode it, the result will be the original input string. Factored Segmenter is used in machine translation by training the translation system to translate text in factor representation to text in the target language that is likewise in factor representation. The final surface form is then recreated by decoding factor representation in the target language.
+An important property of the factor representation is that it allows to fully reconstruct the original input text, it is fully _round-trippable_. If we encode a text as factor tuples, and then decode it, the result will be the original input string. FactoredSegmenter is used in machine translation by training the translation system to translate text in factor representation to text in the target language that is likewise in factor representation. The final surface form is then recreated by decoding factor representation in the target language.
 
-There is one exception to round-trippability. To support specifying specific translations for words ("phrase fixing"), Factored Segmenter can replace token ranges by special placeholders that get translated as such. Alternatively, it can include the given target translation in the source string, using special factors or marker tags.
+There is one exception to round-trippability. To support specifying specific translations for words ("phrase fixing"), FactoredSegmenter can replace token ranges by special placeholders that get translated as such. Alternatively, it can include the given target translation in the source string, using special factors or marker tags. The identity of such a token would get lost in the factored representation (instead, the translation system would remember its identity as side information).
 
-Lastly, it should be noted that the specific factor sets depend on configuration variables. For example, empirically we found no value in the `isWordEnd` factor, so this is often disabled by a configuration setting.
+Lastly, it should be noted that the specific factor sets depend on configuration variables. For example, empirically we found no practical benefit in the `isWordEnd` factor, so this is typically disabled by a configuration setting.
 
-## Factored Segmenter in Code
+## FactoredSegmenter in Code
 
-Factored Segmenter is manifested in code in two different ways. First, in the form of a C# library which allows to execute all functions, that is, training, encoding, and decoding. For example, each time a user invokes Microsoft Translator, e.g. via http://translate.microsoft.com, Factored Segmenter is invoked via the C# interface.
+FactoredSegmenter is manifested in code in two different ways. First, in the form of a C# library which allows to execute all functions, that is, training, encoding, and decoding. For example, each time a user invokes Microsoft Translator, e.g. via http://translate.bing.com, FactoredSegmenter is invoked via the C# interface.
 
 Secondly, a Linux command-line tool that gives access to most of the library functions. This allows to build offline system using the factored-segmenter tool and Marian alone.
 
 ## Training and Factor Configuration
 
-The Factored Segmenter representation is deterministic, but the subword units are not. Hence, a Factored Segmenter model must be trained. The training process (which happens transparently) will first pre-tokenize the input into units of consistent letter type, and then execute SentencePiece training on the resulting tokens. The result of the training process are two files:
+The FactoredSegmenter representation is deterministic, but the subword units are not. Hence, a FactoredSegmenter model must be trained. The training process (which happens transparently) will first pre-tokenize the input into units of consistent letter type, and then execute SentencePiece training on the resulting tokens. The result of the training process are two files:
 
  * an `.FSM` file, for "factored-segmenter model." An `.FSM` file contains everything needed to encode and decode. It holds all configuration options, the factor specification (which lemma has what factors), subword inventories, and also embeds the binary SentencePiece model for subword splitting.
  * an `.FSV` file, for "factored-segmenter vocabulary." The `.FSV` file holds the subset of the `.FSM` model that is needed by the translation software (Marian) to interpret the factor representation.
@@ -95,20 +112,20 @@ At training time, the user must specify all options regarding which factors are 
 
 ## Prerequisites
 
-To build Factored Segmenter, you will need to install the following dependencies:
+To build FactoredSegmenter, you will need to install the following dependencies:
 
 #### Linux
 ```
 sudo apt-get install dotnet-sdk-3.1
 sudo apt-get install dotnet-runtime-3.1
 ```
-SentencePiece
+And you need to install SentencePiece [from source](https://github.com/google/sentencepiece#c-from-source). SentencePiece is accessed both via executing a binary and via direct invocation of the C++ library.
 
 #### Windows
 ```
 https://dotnet.microsoft.com/download/dotnet-core/thank-you/sdk-3.1.101-windows-x64-installer
 ```
-SentencePiece
+And SentencePiece. In the Windows version, SentencePiece is presently only invoked via the SentencePiece command-line tools. It has not been tested whether the [vcpkg installation](https://github.com/google/sentencepiece#installation) works.
 
 ## How to build
 
