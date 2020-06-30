@@ -6,12 +6,12 @@ The term "FactoredSegmenter" refers to both a segmentation library and an encodi
 FactoredSegmenter segments words into subwords using the popular [SentencePiece](https://github.com/google/sentencepiece) library under the hood.
 However, unlike SentencePiece in its common usage, spaces and capitalization are not encoded in the sub-word tokens themselves.
 Instead, they are encoded in _factors_ that are attached to each token.
-This allows to share model parameters across occurences of the same word in the middle of a sentence, capitalized at the start of a sentence, at the start of a sentence enclosed in parentheses or quotation marks, or in all-caps in a social-media rant.
+This allows the sharing of model parameters across occurences of the same word in the middle of a sentence, capitalized at the start of a sentence, at the start of a sentence enclosed in parentheses or quotation marks, or in all-caps in a social-media rant.
 In SentencePiece, these are all distinct tokens, which is less robust. For example, this distinction leads to poor translation accuracy for all-caps sentences.
 
 FactoredSegmenter complements the [Marian Neural Machine Translation Toolkit](https://github.com/marian-nmt/marian), which has native support for factored modeling, and directly understands the FactoredSegmenter text encoding.
 
-FactoredSegmenter supports so-called "phrase fixing," where specific phrases are required to be translated in a very specific way. This is supported by either allowing to replace such phrases by a fixed token (where a factor is used to distinguish multiple such phrase fixes in a single sentence), or by allowing to insert the desired target translation already in the source, where factors are used to distinguish the source from the target translation.
+FactoredSegmenter supports so-called "phrase fixing," where specific phrases are required to be translated in a very specific way. This is supported by either replacing such phrases by a fixed token (where a factor is used to distinguish multiple such phrase fixes in a single sentence), or by inserting the desired target translation directly into the encoded source, where factors are used to distinguish the source from the target translation.
 
 In addition to factors, FactoredSegmenter treats numerals specially: In FactoredSegmenter, each digit is always its own token, in every writing system. We have observed that this reliably fixes a large class of translation errors for numerals, especially when translating between different numeric systems (such as Arabic numbers to Chinese).
 
@@ -32,7 +32,7 @@ FactoredSegmenter attempts to remedy this problem by representing each (sub)word
 ```
 Each tuple member is called a _factor_. The token identity itself ("hydroxychloroquine") is also represented by a factor, which we call the _lemma_, meaning that it is the base form that may be modified by factors (this is inspired by the linguistic term [lemma](https://simple.wikipedia.org/wiki/Lemma_(linguistics)), which is a base form that gets modified by inflections).
 
-A factor has a type and a value. The lemma is a string. For example, `capitalization` is an enumeration with three values, representing the cases of capitalization of the first letter (beginning of a capitalized word, using the symbol `CAP_INITIAL`), of all letters (all-caps, `CAP_ALL`), or of none of the letters (a regular all-lowercase word, `CAP_NONE`). `isWordBeginning` is conceptually a boolean, but for simplicity, we give each factor a unique data type, so `isWordBeginning` is an enum with two values, `WORDBEG_YES` and `WORDBEG_NO`.
+A factor has a type and a value. The lemma is a string. For example, `capitalization` is an enumeration with three values, representing three kinds of capitalization: capitalized first letter (beginning of a capitalized word, using the symbol `CAP_INITIAL`), all-cals (`CAP_ALL`), or and no capitalized letters at all (a regular all-lowercase word, `CAP_NONE`). Mixed-case words are broken into subwords. `isWordBeginning` is conceptually a boolean, but for simplicity, we give each factor a unique data type, so `isWordBeginning` is an enum with two values, `WORDBEG_YES` and `WORDBEG_NO`.
 
 Different lemmas can have different factor sets. For example, digits do not have a capitalization factor. However, for a given lemma, the set of factors is always the same.
 
@@ -81,7 +81,7 @@ Hence, words do not carry factors determining space directly. Rather, such facto
     glueRight = GLUE_RIGHT_NO
 }
 ```
-Again, the written form uses short-hands, in this case `gl+` and `gl-` and likewise `gr+` and `gl-`. The full sequence would be encoded as:
+Again, the written form uses short-hands, in this case `gl+` and `gl-` and likewise `gr+` and `gr-`. The full sequence would be encoded as:
 ```
 HYDRO|ci|wb|wen XY|cn|wbn|wen CHLOROQUINE|cn|wbn|we WORKS|cn|wb|we !|gl+|gr-
 ```
@@ -89,7 +89,7 @@ Note that the short-hands for boolean-like factors are a little inconsistent for
 
 An important property of the factor representation is that it allows to fully reconstruct the original input text, it is fully _round-trippable_. If we encode a text as factor tuples, and then decode it, the result will be the original input string. FactoredSegmenter is used in machine translation by training the translation system to translate text in factor representation to text in the target language that is likewise in factor representation. The final surface form is then recreated by decoding factor representation in the target language.
 
-There is one exception to round-trippability. To support specifying specific translations for words ("phrase fixing"), FactoredSegmenter can replace token ranges by special placeholders that get translated as such. Alternatively, it can include the given target translation in the source string, using special factors or marker tags. The identity of such a token would get lost in the factored representation (instead, the translation system would remember its identity as side information).
+There are few exception to round-trippability. To support specifying specific translations for words ("phrase fixing"), FactoredSegmenter can replace token ranges by special placeholders that get translated as such. Alternatively, it can include the given target translation in the source string, using special factors or marker tags. The identity of such a token would get lost in the factored representation (instead, the translation system would remember its identity as side information). The C# API also allows replacing a character range on the fly (the original characters get lost).
 
 Lastly, it should be noted that the specific factor sets depend on configuration variables. For example, empirically we found no practical benefit in the `isWordEnd` factor, so this is typically disabled by a configuration setting.
 
@@ -108,7 +108,7 @@ The FactoredSegmenter representation is deterministic, but the subword units are
 
 At training time, the user must specify all options regarding which factors are used.
 
-*TODO*: To be continued
+*TODO*: To be continued, e.g. need to document continuous-script handling, combining marks, some more on numerals; also all model options and command-line arguments
 
 ## Prerequisites
 
