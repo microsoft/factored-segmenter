@@ -1,6 +1,4 @@
-#include <stdio.h>
 #include <iostream>
-#include <stddef.h>
 
 #include <sentencepiece_processor.h>
 #include <memory>  // for unique_ptr
@@ -75,9 +73,24 @@ public:
 //  - UnloadModel(intptr_t object)
 // ---------------------------------------------------------------------------
 
+#if defined(_MSC_VER)
+    //  Microsoft 
+#define EXPORT __declspec(dllexport)
+#define IMPORT __declspec(dllimport)
+#elif defined(__GNUC__)
+    //  GCC
+#define EXPORT __attribute__((visibility("default")))
+#define IMPORT
+#else
+    //  do nothing and hope for the best?
+#define EXPORT
+#define IMPORT
+#pragma warning Unknown dynamic link import/export semantics.
+#endif
+
 extern "C" {
 
-intptr_t __declspec(dllexport) __cdecl  LoadModel(const uint16_t* modelPath, const uint16_t** vocab, size_t vocabSize)
+intptr_t EXPORT LoadModel(const uint16_t* modelPath, const uint16_t** vocab, size_t vocabSize)
 {
     try
     {
@@ -89,7 +102,7 @@ intptr_t __declspec(dllexport) __cdecl  LoadModel(const uint16_t* modelPath, con
     }
 }
 
-int __declspec(dllexport) __cdecl  EncodeAsIds(intptr_t object, const uint16_t* word, int* pieceIdBuffer, size_t pieceIdBufferSize)
+int EXPORT EncodeAsIds(intptr_t object, const uint16_t* word, int* pieceIdBuffer, size_t pieceIdBufferSize)
 {
     try
     {
@@ -101,7 +114,7 @@ int __declspec(dllexport) __cdecl  EncodeAsIds(intptr_t object, const uint16_t* 
     }
 }
 
-int __declspec(dllexport) __cdecl UCS2LengthOfPieceId(intptr_t object, int pieceId)
+int EXPORT UCS2LengthOfPieceId(intptr_t object, int pieceId)
 {
     try
     {
@@ -113,7 +126,7 @@ int __declspec(dllexport) __cdecl UCS2LengthOfPieceId(intptr_t object, int piece
     }
 }
 
-void __declspec(dllexport) __cdecl UnloadModel(intptr_t object)
+void EXPORT UnloadModel(intptr_t object)
 {
     delete (SentencePieceInterop*)object;
 }

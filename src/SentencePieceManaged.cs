@@ -11,18 +11,19 @@ namespace Segmentation
 
         private static class NativeMethods
         {
-            [DllImport("SentencePieceInterop.dll", CharSet = CharSet.Unicode, CallingConvention = CallingConvention.Cdecl)]
+            private const string DllName = "SentencePieceInterop";
+            [DllImport(DllName, CharSet = CharSet.Unicode, CallingConvention = CallingConvention.Cdecl)]
             public static extern IntPtr LoadModel(String modelPath,
                 [MarshalAs(UnmanagedType.LPArray, ArraySubType = UnmanagedType.LPWStr, SizeParamIndex = 2)]String[] vocab, ulong vocabSize);
 
-            [DllImport("SentencePieceInterop.dll", CharSet = CharSet.Unicode, CallingConvention = CallingConvention.Cdecl)]
+            [DllImport(DllName, CharSet = CharSet.Unicode, CallingConvention = CallingConvention.Cdecl)]
             public static extern int EncodeAsIds(IntPtr model, string word, 
                 [MarshalAs(UnmanagedType.LPArray, ArraySubType = UnmanagedType.I4, SizeParamIndex = 3)]int[] pieceIdBuffer, ulong pieceIdBufferSize);
 
-            [DllImport("SentencePieceInterop.dll", CallingConvention = CallingConvention.Cdecl)]
+            [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
             public static extern int UCS2LengthOfPieceId(IntPtr model, int pieceId);
 
-            [DllImport("SentencePieceInterop.dll", CallingConvention = CallingConvention.Cdecl)]
+            [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
             public static extern void UnloadModel(IntPtr model);
 
         }
