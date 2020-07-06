@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
 // This file contains stubs to things that are referenced but not actually needed.
 // These should be fixed in the shared code, e.g. by moving out the parts that
 // reference these into a separate source file.

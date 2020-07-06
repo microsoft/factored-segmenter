@@ -1,4 +1,7 @@
-﻿using Common.Collections.Extensions;
+﻿// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
+using Common.Collections.Extensions;
 using Common.MT.Segments;
 using Common.Text;
 using Microsoft.MT.TextSegmentation.SpanFinder;

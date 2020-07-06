@@ -1,13 +1,7 @@
-/***
- * Copyright (C) Microsoft. All rights reserved.
- * Licensed under the MIT license. See LICENSE.txt file in the project root for full license information.
- *
- * =+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+
- *
- * This was extracted from https://github.com/microsoft/cpprestsdk/blob/cdae258bfb22f948c7b768b4dc56f5f4a2d9b2ce/Release/src/utilities/asyncrt_utils.cpp#L305
- *
- * =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
- ****/
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
+// This was extracted from https://github.com/microsoft/cpprestsdk/blob/cdae258bfb22f948c7b768b4dc56f5f4a2d9b2ce/Release/src/utilities/asyncrt_utils.cpp#L305
 
 #include <string>
 #include <stdexcept>

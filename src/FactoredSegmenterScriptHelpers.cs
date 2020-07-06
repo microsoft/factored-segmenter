@@ -1,4 +1,7 @@
-﻿// This is meant as an extension of Unicode.cs. It should be merged into there,
+﻿// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
+// This is meant as an extension of Unicode.cs. It should be merged into there,
 // once the code in here has reached a sufficient level of maturity and generality
 // across languages, and generally support surrogate pairs.
 

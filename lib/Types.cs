@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
 // This file contains a collection of enums, data structures, and interfaces
 // referenced in FactoredSegmenter. These have been extracted from a larger library.
 

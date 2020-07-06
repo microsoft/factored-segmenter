@@ -1,4 +1,7 @@
-﻿using Common.Contracts;
+﻿// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
+using Common.Contracts;
 using Common.Utils;
 using System;
 using System.Collections.Generic;
