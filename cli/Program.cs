@@ -1,4 +1,7 @@
-﻿using Common.Collections.Extensions;
+﻿// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
+using Common.Collections.Extensions;
 using Common.Utils;
 using Microsoft.MT.Common.Tokenization;
 using Microsoft.MT.Segmentation;

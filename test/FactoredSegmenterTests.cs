@@ -1,4 +1,7 @@
-﻿namespace TextSegmentation.Segmenter.FactoredSegmenter_GitSubmodule.src.Test
+﻿// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
+namespace TextSegmentation.Segmenter.FactoredSegmenter_GitSubmodule.src.Test
 {
     using Microsoft.MT.Common.Tokenization;
     using Microsoft.MT.Common.Tokenization.Segmenter;

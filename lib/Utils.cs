@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
 // This file contains a collection of utility functions. This is an extract
 // from a larger library, reduced to what is actually used by this project.
 

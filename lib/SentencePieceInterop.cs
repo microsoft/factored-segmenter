@@ -1,4 +1,7 @@
-﻿// Wrapper around the SentencePiece runtime library.
+﻿// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
+// Wrapper around the SentencePiece runtime library.
 // This is currently emulated by a process-based interface,
 // until a real P/invoke implementation is completed.
 
