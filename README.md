@@ -88,13 +88,13 @@ Any character that may be used as part of this syntax is escaped as a hex code. 
 
 #### Representation of Space Between Tokens
 
-If you are familiar with SentencePiece, you will notice that the tuples above do not directly encode whether there is a space before or after the word. Instead, it is encoded as factors whether a token is at the _boundary_ (beginning/end) of a word. For single-word tokens, both flags are true. Most of the time, a word boundary implies a spaces, but not always. For example, a word in quotation marks would not be enclosed in spaces; rather the quotation marks would. For example, the sequence "Hydroxychloroquine works" would be encoded as:
+If you are familiar with SentencePiece, you will notice that the tuples above do not directly encode whether there is a space before or after the word. Instead, it is encoded as factors whether a token is at the _boundary_ (beginning/end) of a word. For single-word tokens, both flags are true. Most of the time, a word boundary implies a spaces, but not always. For example, a word in quotation marks would not be enclosed in spaces; rather, the quotation marks would. For example, the sequence "Hydroxychloroquine works" would be encoded as:
 ```
 HYDRO|ci|wb|wen XY|cn|wbn|wen CHLOROQUINE|cn|wbn|we WORKS|cn|wb|we
 ```
 without explicit factors for spaces; rather, the space between "hydroxychloroquine" and "works" is implied by the word-boundary factors.
 
-Hence, words do not carry factors determining space directly. Rather, spacing-related factors are carried by _punctuation marks_. By default, there is always a space at word boundaries, but punctuation carries factors stating whether a space surrounding the punctuation should rather be _elided_, whether the punctuation should be "glued" to the surrounding token(s). For example, in the sentence "Hydroxychloroquine works!", the sentence-final exclamation point is glued to the word to the left, and would be represented by the following factor tuple:
+Hence, words do not carry factors determining space directly. Rather, spacing-related factors are carried by _punctuation marks_. By default, there is always a space at word boundaries, but punctuation carries factors stating whether a space surrounding the punctuation should rather be _elided_, whether the punctuation should be _glued_ to the surrounding token(s). For example, in the sentence "Hydroxychloroquine works!", the sentence-final exclamation point is glued to the word to the left, and would be represented by the following factor tuple:
 ```
 {
     lemma = "!",
@@ -113,22 +113,22 @@ Note that the short-hands for boolean-like factors are a little inconsistent for
 
 An important property of the factor representation is that it allows to fully reconstruct the original input text, it is fully _round-trippable_. If we encode a text as factor tuples, and then decode it, the result will be the original input string. FactoredSegmenter is used in machine translation by training the translation system to translate text in factor representation to text in the target language that is likewise in factor representation. The final surface form is then recreated by decoding factor representation in the target language.
 
-There are few exception to round-trippability. To support specifying specific translations for words ("phrase fixing"), FactoredSegmenter can replace token ranges by special placeholders that get translated as such. Alternatively, it can include the given target translation in the source string, using special factors or marker tags. The identity of such a token would get lost in the factored representation (instead, the translation system would remember its identity as side information). The C# API also allows replacing a character range on the fly (the original characters get lost).
+There are few exception to round-trippability. To support specifying specific translations for words ("phrase fixing"), FactoredSegmenter can replace token ranges by special placeholders that get translated as such. Alternatively, it can include the given target translation in the source string, using special factors or marker tags. The identity of such a token would get lost in the factored representation (instead, the translation system would remember its identity as side information). The C# API also allows replacing arbitrary character ranges on the fly (the original characters get lost).
 
 Lastly, it should be noted that the specific factor sets depend on configuration variables. For example, empirically we found no practical benefit in the `isWordEnd` factor, so this is typically disabled by a configuration setting.
 
 ## FactoredSegmenter in Code
 
-FactoredSegmenter is manifested in code in two different ways. First, in the form of a C# library which allows to execute all functions, that is, training, encoding, and decoding. For example, each time a user invokes Microsoft Translator, e.g. via http://translate.bing.com, FactoredSegmenter is invoked via the C# interface.
+FactoredSegmenter is manifested in code in two different ways. First, in the form of a C# library which allows to execute all functions, that is, training, encoding, and decoding. For example, each time a user invokes Microsoft Translator, e.g. via http://translate.bing.com, FactoredSegmenter is invoked via the C# interface twice, once to encode the source sentence, and once to decode the translation.
 
-Secondly, a Linux command-line tool that gives access to most of the library functions. This allows to build offline system using the factored-segmenter tool and Marian alone.
+Secondly, a Linux command-line tool gives access to most of the library functions. This is used for training FactoredSegmenter models (subword representations), and it allows to build offline systems using the factored-segmenter tool and Marian alone.
 
 ## Training and Factor Configuration
 
-The FactoredSegmenter representation is deterministic, but the subword units are not. Hence, a FactoredSegmenter model must be trained. The training process (which happens transparently) will first pre-tokenize the input into units of consistent letter type, and then execute SentencePiece training on the resulting tokens. The result of the training process are two files:
+The FactoredSegmenter representation is rule-based, except for the subword units, which are based on SentencePiece. Hence, before one can tokenize text with FactoredSegmenter, a _FactoredSegmenter model_ must be trained. The training process first pre-tokenizes the input into units of consistent letter type, and then execute SentencePiece training on the resulting tokens. The result of the training process are two files:
 
- * an `.FSM` file, for "factored-segmenter model." An `.FSM` file contains everything needed to encode and decode. It holds all configuration options, the factor specification (which lemma has what factors), subword inventories, and also embeds the binary SentencePiece model for subword splitting.
- * an `.FSV` file, for "factored-segmenter vocabulary." The `.FSV` file holds the subset of the `.FSM` model that is needed by the translation software (Marian) to interpret the factor representation.
+ * an `.fsm` file, for "factored-segmenter model." An `.fsm` file contains everything needed to encode and decode. It holds all configuration options, the factor specification (which lemma has what factors), subword inventories, and also embeds the binary SentencePiece model for subword splitting.
+ * an `.fsv` file, for "factored-segmenter vocabulary." The `.fsv` file holds the subset of the `.fsm` model that is needed by the translation software (Marian) to interpret the factor representation.
 
 At training time, the user must specify all options regarding which factors are used.
 
