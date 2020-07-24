@@ -1,32 +1,32 @@
 # FactoredSegmenter
 
-FactoredSegmenter is the unsupervised text tokenizer for machine translation that underlies Microsoft Translator.
+FactoredSegmenter is the unsupervised text tokenizer for machine translation that aims at _factoring shared properties of words_, such as casing or spacing, and underlies Microsoft Translator.
 It encodes tokens in the form `WORDPIECE|factor1|factor2|...|factorN`.
 This encoding syntax is directly understood by the [Marian Neural Machine Translation Toolkit](https://github.com/marian-nmt/marian).
-To use FactoredSegmenter with other toolkits, one must implement a parser for this format, and modify the embedding lookup and, to use factors on the target side, the beam decoder.
-The term "FactoredSegmenter" refers to both a segmentation library and an encoding of text that aims at _factoring shared properties of words_, such as casing or spacing.
+To use FactoredSegmenter with other toolkits, one must implement a parser for this format, modify the embedding lookup and, to use factors on the target side, the beam decoder.
+The term "FactoredSegmenter" refers to both a segmentation library and an encoding of text.
 
 FactoredSegmenter segments words into subwords, or _word pieces_, using the popular [SentencePiece](https://github.com/google/sentencepiece) library under the hood.
 However, unlike SentencePiece in its common usage, spaces and capitalization are not encoded in the sub-word tokens themselves.
 Instead, spacing and capitalization are encoded in _factors_ that are attached to each token.
-
 The purpose of this is to allow the sharing of model parameters across all occurences of a word, be it
 in the middle of a sentence, capitalized at the start of a sentence, at the start of a sentence enclosed in parentheses or quotation marks, or in all-caps in a social-media rant.
 In SentencePiece, these are all distinct tokens, which is less robust.
 For example, this distinction leads to poor translation accuracy for all-caps sentences, which is problematic when translating social-media posts.
 
-Features:
- * represents words and tokens as _tuples of factors_ to allow for parameter sharing. E.g. spacing and capitalization are separate factors on word pieces;
+#### Features of FactoredSegmenter
+
+ * represents words and tokens as _tuples of factors_ to allow for parameter sharing. E.g. spacing and capitalization are separate factors on word pieces. An NMT training tool would form token embeddings by summing or concatenating embeddings of all factors in the factor tuple;
  * infrequent words are represented by _subwords_, aka word pieces, using the SentencePiece library;
- * robust treatment of _numerals_: Each digit is always its own token, in every writing system. We have observed that this reliably fixes a large class of translation errors for numerals, especially when translating between different numeric systems (such as Arabic numbers to Chinese);
+ * robust treatment of _numerals_: Each digit is always split as its own token, in any writing system. We have observed that this reliably fixes a large class of translation errors for numerals, especially when translating between different numeric systems (such as Arabic numbers to Chinese);
  * support for _"phrase fixing,"_ where specific phrases are required to be translated in a very specific way. Such constrained translation is achieved with FactoredSegmenter by either replacing such phrases by a fixed token (where a factor is used to distinguish multiple such phrase fixes in a single sentence), or by inserting the desired target translation directly into the encoded source, where factors are used to distinguish the source from the target translation;
- * unknown-character handling: characters not covered by the word-piece vocabulary, fore example rare graphical characters, are encoded by their Unicode character code in a form that a translation system can learn to copy through;
+ * unknown-character handling: characters not covered by the word-piece vocabulary, for example rare Emojis, are encoded by their Unicode character code in a form that a translation system can learn to copy through;
  * round-trippable: allows to fully reconstruct the source sentence from the factored (sub)word representation (with minor exceptions);
  * support of continuous scripts, which have different rules for spacing, and combining marks.
 
 ## Factors
 
-Let's pick a random word of recent prominence: "hydroxychloroquine." First, observe that whether it occurs at the beginning of the word (where it would normally be capitalized) or within the sentence, or whether it appears after a quotation mark (where it is lower-case but there is no space before it) or not, it is still the same word, and it seems desirable to share parameters across all four cases. For example, since "hydroxychloroquine" is a word rarely seen until recently, it may not have been seen frequently enough after a quotation mark to get its own token. Hence, in that situation it would not only not share its embedding, but it also may be segmented differently from the other cases.
+Let's randomly pick a word of recent prominence, say "hydroxychloroquine." First, observe that whether it occurs at the beginning of the word (where it would normally be capitalized) or within the sentence, or whether it appears after a quotation mark (where it is lower-case but there is no space before it), it is still the same word, and it seems desirable to share embedding parameters across all four cases to some degree. Secondly, note that since "hydroxychloroquine" is a word rarely seen until recently, it may not have been seen frequently enough after a quotation mark to get its own token. Hence, in that situation it would not only not share its embedding, but it also may be segmented differently altogether from the other cases.
 
 FactoredSegmenter attempts to remedy this problem by representing each (sub)word as a tuple. For example, "hydroxychloroquine" at sentence start would be represented by a tuple
 that might be written in pseudo-code as
@@ -39,15 +39,17 @@ that might be written in pseudo-code as
 }
 ```
 Each tuple member is called a _factor_. The subword identity itself ("hydroxychloroquine") is also represented by a factor, which we call the _lemma_, meaning that it is the base form that may be modified by factors (this is inspired by the linguistic term [lemma](https://simple.wikipedia.org/wiki/Lemma_(linguistics)), which is a base form that gets modified by inflections).
+In machine translation, the embedding of the tuple would be formed by composing embedding vectors for each individual factor in the tuple, e.g. by summing or concatenating them.
 
-A factor has a type and a value. While the lemma is a string, `capitalization` is an enumeration with three values, representing three kinds of capitalization: capitalized first letter (beginning of a capitalized word, using the symbol `CAP_INITIAL`), all-caps (`CAP_ALL`), and no capitalized letters at all (a regular all-lowercase word, `CAP_NONE`). To represent mixed-case words, e.g. RuPaul, we break them into subwords. `isWordBeginning` is conceptually a boolean, but for simplicity, we give each factor a unique data type, so `isWordBeginning` is an enum with two values, `WORDBEG_YES` and `WORDBEG_NO`.
+A factor has a type and a value. While the lemma is a string, the `capitalization` factor above is an enumeration with three values, representing three kinds of capitalization: capitalized first letter (beginning of a capitalized word, using the symbol `CAP_INITIAL`), all-caps (`CAP_ALL`), and no capitalized letters at all (a regular all-lowercase word, `CAP_NONE`). To represent mixed-case words, e.g. RuPaul, we break them into subwords. `isWordBeginning` is conceptually a boolean, but for simplicity, we give each factor a unique data type, so `isWordBeginning` is an enum with two values, `WORDBEG_YES` and `WORDBEG_NO`. Likewise for `isWordEnd`.
 
 Different lemmas can have different factor sets. For example, digits and punctuation cannot be capitalized,
 hence those lemmas not have a capitalization factor. However, for a given lemma, the set of factors is always the same.
+The specific set of factors of a lemma is determined from heuristics represented in the FactoredSegmenter code, with some configurability via options.
 
-For infrequent words or morphological variants, FactoredSegmenter supports subword units. A subword unit is used when a word is unseen in the training, or not seen often enough. FactoredSegmenter relies on the SentencePiece library for determining suitable subword units.
+For infrequent words or morphological variants, FactoredSegmenter supports subword units. A subword unit is used when a word is unseen in the training, or not seen often enough. FactoredSegmenter relies on the excellent SentencePiece library for determining suitable subword units.
 
-For example, "hydroxychloroquine" might be rare enough to be represented by subwords, such as "hydro" + "xy" + "chloroquine", it would be represented as a sequence of three tuples:
+For example, "hydroxychloroquine" might be rare enough to be represented by subwords, such as "hydro" + "xy" + "chloroquine". It would be represented as a sequence of three tuples:
 ```
 {
     lemma = "hydro",
@@ -70,11 +72,11 @@ For example, "hydroxychloroquine" might be rare enough to be represented by subw
 ```
 The subword nature of the tuples is represented by the `isWordBeginning` and `isWordEnd` factors.
 
-### Factor Syntax
+#### Factor Syntax
 
 When written to a text file or when communicated to an NMT training toolkit, factor tuples are represented as strings following a specific syntax:
-The factor values are concatenated, separated by a vertical bar. A direct concatenation of the above example would give `hydroxychloroquine|CAP_INITIAL|WORDBEG_YES|WORDEND_YES`.
-However, to avoid to dramatically increase data-file sizes, factors use short-hand notations when serialized. Also, to make those files a little more readable to humans, lemmas are written in all-caps, while factors use lowercase. If "hydroxychloroquine" is a single word piece, the actual form as written to file of the above is:
+The factor values are concatenated, separated by vertical bars. A direct concatenation of the above example would give `hydroxychloroquine|CAP_INITIAL|WORDBEG_YES|WORDEND_YES`.
+However, to avoid to dramatically increase data-file sizes, factors use short-hand notations when serialized. Also, to make those files a little more readable to us humans, lemmas are written in all-caps, while factors use lowercase (this also avoids name conflicts between factor names and real words). If "hydroxychloroquine" is a single word piece, the actual form as written to file of the above is:
 ```
 HYDROXYCHLORIQUINE|ci|wb|we
 ```
@@ -82,8 +84,9 @@ The example above where it is represented by multiple subword units has the foll
 ```
 HYDRO|ci|wb|wen XY|cn|wbn|wen CHLOROQUINE|cn|wbn|we
 ```
+Any character that may be used as part of this syntax is escaped as a hex code. For example, if the vertical bar character itself was the lemma, it would be serialized as `\x7c`.
 
-### Representation of Space Between Tokens
+#### Representation of Space Between Tokens
 
 If you are familiar with SentencePiece, you will notice that the tuples above do not directly encode whether there is a space before or after the word. Instead, it is encoded as factors whether a token is at the _boundary_ (beginning/end) of a word. For single-word tokens, both flags are true. Most of the time, a word boundary implies a spaces, but not always. For example, a word in quotation marks would not be enclosed in spaces; rather the quotation marks would. For example, the sequence "Hydroxychloroquine works" would be encoded as:
 ```
@@ -91,7 +94,7 @@ HYDRO|ci|wb|wen XY|cn|wbn|wen CHLOROQUINE|cn|wbn|we WORKS|cn|wb|we
 ```
 without explicit factors for spaces; rather, the space between "hydroxychloroquine" and "works" is implied by the word-boundary factors.
 
-Hence, words do not carry factors determining space directly. Rather, such factors are carried by _punctuation marks_. By default, there is always a space at word boundaries, and punctuation carries factors stating whether a space surrounding the punctuation should rather be _elided_, whether the punctuation should be "glued" to the surrounding token(s). For example, in the sentence "Hydroxychloroquine works!", the exclamation point is glued to the word to the left, and would be represented by the following factor tuple:
+Hence, words do not carry factors determining space directly. Rather, spacing-related factors are carried by _punctuation marks_. By default, there is always a space at word boundaries, but punctuation carries factors stating whether a space surrounding the punctuation should rather be _elided_, whether the punctuation should be "glued" to the surrounding token(s). For example, in the sentence "Hydroxychloroquine works!", the sentence-final exclamation point is glued to the word to the left, and would be represented by the following factor tuple:
 ```
 {
     lemma = "!",
@@ -100,13 +103,13 @@ Hence, words do not carry factors determining space directly. Rather, such facto
 }
 ```
 The `glueLeft` factor indicates that the default space after `works` should be elided.
-The short-hand form used when writing to file is `gl+` and `gl-` and likewise `gr+` and `gr-`. The full sequence would be encoded as:
+The short-hand form that is used when writing to file is `gl+` and `gl-` and likewise `gr+` and `gr-`. The full sequence would be encoded as:
 ```
 HYDRO|ci|wb|wen XY|cn|wbn|wen CHLOROQUINE|cn|wbn|we WORKS|cn|wb|we !|gl+|gr-
 ```
 Note that the short-hands for boolean-like factors are a little inconsistent for historical reasons. Note also that this documentation makes no claims regarding the veracity of its example sentences.
 
-### Round-Trippability
+#### Round-Trippability
 
 An important property of the factor representation is that it allows to fully reconstruct the original input text, it is fully _round-trippable_. If we encode a text as factor tuples, and then decode it, the result will be the original input string. FactoredSegmenter is used in machine translation by training the translation system to translate text in factor representation to text in the target language that is likewise in factor representation. The final surface form is then recreated by decoding factor representation in the target language.
 
