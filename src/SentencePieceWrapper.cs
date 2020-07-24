@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text;
 using Common.Collections;
 using Common.Collections.Extensions;
@@ -139,7 +140,11 @@ namespace Microsoft.MT.Common.Tokenization
             //    --input=/philly/wu3/msrmt/fseide/WMT.paracrawl/data/all.paracrawl.8M.norm.$units.ende.sub \
             //    --model_prefix=/philly/wu3/msrmt/fseide/WMT.paracrawl/model/all.paracrawl.8M.norm.$units.ende \
             //    --vocab_size=32000  --character_coverage=1.0  --model_type=unigram  --shuffle_input_sentence=false
-            var exe = Path.Combine(spmBinDir, "spm_train"); // (note: no .exe so that this can run on both Windows and Linux)
+            string exe = Path.Combine(spmBinDir, "spm_train");
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                exe = Path.Combine(spmBinDir, "spm_train.exe");
+            }
             var args = new List<string> { "--input", inputPath, "--model_prefix", modelPrefix };
             var extraArgs = from extraParam in new Dictionary<string, object>
                             { // @TODO: use generic Flo method that parses the struct type directly
